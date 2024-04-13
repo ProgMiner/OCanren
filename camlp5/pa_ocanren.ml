@@ -208,6 +208,15 @@ let add_freshes ~loc vars body =
   in
   loop vars
 
+let add_wildcards ~loc vars body =
+  let rec loop = function
+  | a::tl ->
+      let pa = <:patt< $lid:a$ >> in
+      <:expr< OCanren.wc (fun $pa$ -> $loop tl$) >>
+  | []    -> body
+  in
+  loop vars
+
 open Writer
 
 let stream_peek_nth n (strm : (string * string) Stream.t) =
@@ -358,7 +367,10 @@ EXTEND
           let (vars1, l) = l in
           let (vars2, r) = r in
           add_freshes ~loc (vars1@vars2) <:expr< OCanren.unify $l$ $r$ >>
-      | l=ocanren_term; "=/="; r=ocanren_term         -> <:expr< OCanren.diseq $snd l$ $snd r$ >>
+      | l=ocanren_term; "=/="; r=ocanren_term ->
+          let (vars1, l) = l in
+          let (vars2, r) = r in
+          add_wildcards ~loc (vars1@vars2) <:expr< OCanren.diseq $l$ $r$ >>
       | l=ocanren_term; op=operator; r=ocanren_term   ->
           let p = <:expr< $lid:op$ >> in
           let a = <:expr< $p$ $snd l$ >> in
