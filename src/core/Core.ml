@@ -409,6 +409,13 @@ let structural : 'a  ->
   | Prunes.Violated -> failure st
   | NonViolated -> success { st with State.prunes = new_constraints }
 
+let is_not_var (x : 'a ilogic) : goal = fun {env; subst} as st ->
+    if Env.is_var env x
+    then if Env.is_var env (Subst.apply env subst x)
+        then Stream.nil
+        else Stream.single st
+    else Stream.single st
+
 (*
 include (struct
   @type cost = CFixed of GT.int | CAtLeast of GT.int with show
