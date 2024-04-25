@@ -273,6 +273,14 @@ let image env subst =
 
 let apply env subst = Term.Flat.map ~fvar:(image env subst) ~fval:(fun _ -> Term.repr)
 
+let shallow_apply env subst x =
+  Env.unterm_flat env x ~fval:(fun _ _ -> x) ~fcon:(fun _ _ _ -> x)
+    ~fvar:begin fun x ->
+    match walk env subst x with
+    | x, None -> Term.repr x
+    | _, Some x -> x
+    end
+
 let freevars env subst x = Env.freevars env @@ apply env subst x
 
 module Answer =
