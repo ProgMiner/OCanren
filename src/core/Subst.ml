@@ -222,6 +222,15 @@ let apply env subst x = Obj.magic @@
     ~fvar:(fun v -> Term.repr v)
     ~fval:(fun x -> Term.repr x)
 
+let shallow_apply env subst x =
+  match Env.var env x with
+  | Some x ->
+    begin match walk env subst x with
+    | WC x | Var x -> Obj.magic x
+    | Value x -> Obj.magic x
+    end
+  | None -> x
+
 let unify_map env subst map =
   let vars, terms =
     Term.VarMap.fold (fun v term acc -> (v :: fst acc, term :: snd acc)) map ([],[])
@@ -229,7 +238,6 @@ let unify_map env subst map =
   (* log "var   = %s" (Term.show (Obj.magic (apply env subst vars))); *)
   (* log "terms = %s" (Term.show (Obj.magic (apply env subst terms))); *)
   unify env subst (Obj.magic vars) (Obj.magic terms)
-
 
 let freevars env subst x =
   Env.freevars env @@ apply env subst x
