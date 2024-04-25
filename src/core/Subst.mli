@@ -69,6 +69,11 @@ val subsumed : Env.t -> t -> t -> bool
  *)
 val apply : Env.t -> t -> Term.t -> Term.t
 
+(* [shallow_apply env subst x] performs one-step [subst] application on [x] if it's a logic variable,
+ *  otherwise does nothing
+ *)
+val shallow_apply : Env.t -> t -> Term.t -> Term.t
+
 (* [freevars env subst x] - returns all free-variables of term [x] *)
 val freevars : Env.t -> t -> Term.t -> Term.VarSet.t
 
