@@ -409,11 +409,19 @@ let structural : 'a  ->
   | Prunes.Violated -> failure st
   | NonViolated -> success { st with State.prunes = new_constraints }
 
-let is_not_var (x : 'a ilogic) : goal = fun {env; subst} as st ->
+let check_is_var ({env; subst} : State.t) (x : 'a ilogic) : bool =
     if Env.is_var env x
-    then if Env.is_var env (Subst.apply env subst x)
-        then Stream.nil
-        else Stream.single st
+    then Env.is_var env @@ Subst.apply env subst x
+    else false
+
+let is_var (x : 'a ilogic) : goal = fun st ->
+    if check_is_var st x
+    then Stream.single st
+    else Stream.nil
+
+let is_not_var (x : 'a ilogic) : goal = fun {env; subst} as st ->
+    if check_is_var st x
+    then Stream.nil
     else Stream.single st
 
 (*
