@@ -48,6 +48,11 @@ val split : t -> Binding.t list
  *)
 val apply : Env.t -> t -> 'a -> 'a
 
+(* [shallow_apply env subst x] - if [x] is variable, applies [subst] to [x],
+ *  otherwise does nothing
+ *)
+val shallow_apply : Env.t -> t -> 'a -> 'a
+
 (* [is_bound x subst] - checks whether [x] is bound by [subst] *)
 val is_bound : Term.Var.t -> t -> bool
 

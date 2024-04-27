@@ -411,7 +411,7 @@ let structural : 'a  ->
 
 let check_is_var ({env; subst} : State.t) (x : 'a ilogic) : bool =
     if Env.is_var env x
-    then Env.is_var env @@ Subst.apply env subst x
+    then Env.is_var env @@ Subst.shallow_apply env subst x
     else false
 
 let is_var (x : 'a ilogic) : goal = fun st ->

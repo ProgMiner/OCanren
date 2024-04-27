@@ -209,6 +209,16 @@ let apply env subst x = Obj.magic @@
     ~fvar:(fun v -> Term.repr v)
     ~fval:(fun x -> Term.repr x)
 
+let shallow_apply env subst x =
+  match Term.var x with
+  | Some v -> begin
+    match walk env subst v with
+    | WC v
+    | Var v   -> Obj.magic v
+    | Value x -> Obj.magic x
+    end
+  | None -> x
+
 let freevars env subst x =
   Env.freevars env @@ apply env subst x
 
