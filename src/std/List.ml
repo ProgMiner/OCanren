@@ -145,13 +145,11 @@ let rec foldro f a xs r =
 let rec mapo f xs ys =
   conde [
     (xs === nil ()) &&& (ys === nil ());
-    Fresh.two (fun z zs ->
+    Fresh.four (fun z zs a1 a2 ->
       (xs === z % zs) &&&
-      (Fresh.two (fun a1 a2 ->
-          (f z a1) &&&
-          (mapo f zs a2) &&&
-          (ys === a1 % a2)
-      ))
+      (ys === a1 % a2) &&&
+      (f z a1) &&&
+      (mapo f zs a2)
     )
   ]
 
