@@ -417,10 +417,25 @@ let structural : 'a  ->
 
 exception Occurs_check = Subst.Occurs_check
 
-let bind_occurs_hook (x : 'a) (r : ('a, 'b) Reifier.t) (h : int -> 'b -> 'a) : goal =
+type term_vars = { get: 'a. int -> 'a ilogic }
+
+let bind_occurs_hook (x : 'a) (r : ('a, 'b) Reifier.t)
+  (h : term_vars -> int -> 'b -> 'a) : goal =
+  let module IM = Map.Make(Int) in
+
+  let updf v = function
+  | Some u when v = u -> Some v
+  | Some _ -> failwith "different Var.t for single index"
+  | None -> Some v
+  in
+
   match Term.var x with
   | Some x -> fun {env; occurs_hooks} as st ->
-    let h t = Term.repr @@ h x.index (r env (Obj.magic t)) in
+    let h t =
+      let vars = Term.fold t ~init:IM.empty ~fval:Fun.const
+        ~fvar:(fun acc v -> IM.update v.index (updf @@ Obj.magic v) acc) in
+      let get_var v = IM.find v vars in
+      Term.repr @@ h {get = get_var} x.index (r env (Obj.magic t)) in
     Stream.single { st with State.occurs_hooks = Term.VarMap.add x h occurs_hooks }
 
   | None -> failwith "bind_occurs_hook must receive only variables"
