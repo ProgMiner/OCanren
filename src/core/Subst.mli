@@ -34,6 +34,10 @@ module Binding :
 
 type t
 
+exception Occurs_check
+
+type 'a occurs_hook = Term.Var.t -> Term.t -> Term.t
+
 val pp: Format.formatter -> t -> unit
 
 val empty : t
@@ -59,7 +63,8 @@ val is_bound : Term.Var.t -> t -> bool
 (* [freevars env subst x] - returns all free-variables of term [x] *)
 val freevars : Env.t -> t -> 'a -> Term.VarSet.t
 
-(* [unify ~subsume ~scope env subst x y] performs unification of two terms [x] and [y] in [subst].
+(* [unify ~subsume ~scope ~occurs_hook env subst x y] performs unification
+ *   of two terms [x] and [y] in [subst].
  *   Unification is a process of finding substituion [s] s.t. [s(x) = s(y)].
  *   Returns [None] if two terms are not unifiable.
  *   Otherwise it returns a pair of diff and new substituion.
@@ -69,8 +74,18 @@ val freevars : Env.t -> t -> 'a -> Term.VarSet.t
  *   (i.e. it returns [s] s.t. [s(x) = y]).
  *   This can be used to perform subsumption check:
  *   [y] is subsumed by [x] (i.e. [x] is more general than [x]) if such a unification succeeds.
+ *
+ *   If [occurs_hook] passed and while unification will be established that substitution recursive,
+ *   [occurs_hook var term] will be called to suggest an alternative substitution for variable
+ *   [var]. Note that [var] could have different from [x] and [y] type. Occurs hook could raise
+ *   [Occurs_check] if there aren't any suggestion for given [var].
  *)
-val unify : ?subsume:bool -> ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
+val unify : ?subsume:bool
+         -> ?scope:Term.Var.scope
+         -> ?occurs_hook:('a occurs_hook)
+         -> Env.t -> t
+         -> 'a -> 'a
+         -> (Binding.t list * t) option
 
 val merge_disjoint : Env.t -> t -> t -> t
 

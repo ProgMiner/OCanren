@@ -262,6 +262,7 @@ module State =
       ; ctrs  : Disequality.t
       ; prunes: Prunes.t
       ; scope : Term.Var.scope
+      ; occurs_hooks: (Term.t -> Term.t) Term.VarMap.t
       }
 
     type reified = Env.t * Term.t
@@ -272,6 +273,7 @@ module State =
       ; ctrs  = Disequality.empty
       ; prunes = Prunes.empty
       ; scope = Term.Var.new_scope ()
+      ; occurs_hooks = Term.VarMap.empty
       }
 
     let env   {env} = env
@@ -285,8 +287,12 @@ module State =
 
     let new_scope st = {st with scope = Term.Var.new_scope ()}
 
+    let occurs_hook {occurs_hooks} v =
+        try Term.VarMap.find v occurs_hooks
+        with Not_found -> fun _ -> raise Subst.Occurs_check
+
     let unify x y ({env; subst; ctrs; scope} as st) =
-        match Subst.unify ~scope env subst x y with
+        match Subst.unify ~scope ~occurs_hook:(occurs_hook st) env subst x y with
         | None -> None
         | Some (prefix, subst) ->
           match Disequality.recheck env subst ctrs prefix with
@@ -409,20 +415,30 @@ let structural : 'a  ->
   | Prunes.Violated -> failure st
   | NonViolated -> success { st with State.prunes = new_constraints }
 
+exception Occurs_check = Subst.Occurs_check
+
+let bind_occurs_hook (x : 'a) (r : ('a, 'b) Reifier.t) (h : int -> 'b -> 'a) : goal =
+  match Term.var x with
+  | Some x -> fun {env; occurs_hooks} as st ->
+    let h t = Term.repr @@ h x.index (r env (Obj.magic t)) in
+    Stream.single { st with State.occurs_hooks = Term.VarMap.add x h occurs_hooks }
+
+  | None -> failwith "bind_occurs_hook must receive only variables"
+
 let check_is_var ({env; subst} : State.t) (x : 'a ilogic) : bool =
-    if Env.is_var env x
-    then Env.is_var env @@ Subst.shallow_apply env subst x
-    else false
+  if Env.is_var env x
+  then Env.is_var env @@ Subst.shallow_apply env subst x
+  else false
 
 let is_var (x : 'a ilogic) : goal = fun st ->
-    if check_is_var st x
-    then Stream.single st
-    else Stream.nil
+  if check_is_var st x
+  then Stream.single st
+  else Stream.nil
 
 let is_not_var (x : 'a ilogic) : goal = fun {env; subst} as st ->
-    if check_is_var st x
-    then Stream.nil
-    else Stream.single st
+  if check_is_var st x
+  then Stream.nil
+  else Stream.single st
 
 (*
 include (struct

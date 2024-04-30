@@ -53,6 +53,8 @@ module Binding =
 
 type t = Term.t Term.VarMap.t
 
+type 'a occurs_hook = Term.Var.t -> Term.t -> Term.t
+
 let empty = Term.VarMap.empty
 
 let pp ppf (s: t) =
@@ -130,6 +132,21 @@ let fold ~fvar ~fval ~init env subst x =
   in
   Term.fold x ~init ~fval ~fvar:deepfvar
 
+let apply env subst x = Obj.magic @@
+  map env subst (Term.repr x)
+    ~fvar:(fun v -> Term.repr v)
+    ~fval:(fun x -> Term.repr x)
+
+let shallow_apply env subst x =
+  match Term.var x with
+  | Some v -> begin
+    match walk env subst v with
+    | WC v
+    | Var v   -> Obj.magic v
+    | Value x -> Obj.magic x
+    end
+  | None -> x
+
 exception Occurs_check
 
 let rec occurs env subst var term =
@@ -137,37 +154,45 @@ let rec occurs env subst var term =
     ~fvar:(fun v -> if Term.Var.equal v var then raise Occurs_check)
     ~fval:(fun x -> ())
 
-let extend ~scope env subst var term  =
-  (* if occurs env subst var term then raise Occurs_check *)
-  if Runconf.do_occurs_check () then occurs env subst var term;
-    (* assert (VarEnv.var env var <> VarEnv.var env term); *)
-  occurs env subst var term;
+let extend ~scope ?(occurs_hook=fun _ _ -> raise Occurs_check) env subst var term =
+  let inner term =
+    (* It is safe to modify variables destructively if the case of scopes match.
+     * There are two cases:
+     * 1) If we do unification just after a conde, then the scope is already incremented and nothing goes into
+     *    the fresh variables.
+     * 2) If we do unification after a fresh, then in case of failure it doesn't matter if
+     *    the variable is be distructively substituted: we will not look on it in future.
+     *)
 
-  (* It is safe to modify variables destructively if the case of scopes match.
-   * There are two cases:
-   * 1) If we do unification just after a conde, then the scope is already incremented and nothing goes into
-   *    the fresh variables.
-   * 2) If we do unification after a fresh, then in case of failure it doesn't matter if
-   *    the variable is be distructively substituted: we will not look on it in future.
-   *)
-  IFDEF SET_VAR_VAL THEN
-  if (scope = var.Term.Var.scope) && (scope <> Term.Var.non_local_scope)
-  then begin
-    var.subst <- Some (Obj.repr term);
-    subst
-  end
-    else
-      Term.VarMap.add var (Term.repr term) subst
-  ELSE
-    Term.VarMap.add var (Term.repr term) subst
-  END
+    IFDEF SET_VAR_VAL THEN
+    if (scope = var.Term.Var.scope) && (scope <> Term.Var.non_local_scope)
+    then begin
+      var.subst <- Some term;
+      subst
+    end
+      else
+        Term.VarMap.add var term subst
+    ELSE
+      Term.VarMap.add var term subst
+    END
+  in
+
+  try
+    (* if occurs env subst var term then raise Occurs_check_hlp *)
+    if Runconf.do_occurs_check () then occurs env subst var term;
+      (* assert (VarEnv.var env var <> VarEnv.var env term); *)
+
+    inner term
+
+  with Occurs_check ->
+    inner @@ occurs_hook var @@ apply env subst term
 
 exception Unification_failed
 
-let unify ?(subsume=false) ?(scope=Term.Var.non_local_scope) env subst x y =
+let unify ?(subsume=false) ?(scope=Term.Var.non_local_scope) ?occurs_hook env subst x y =
   (* The idea is to do the unification and collect the unification prefix during the process *)
   let extend var term (prefix, subst) =
-    let subst = extend ~scope env subst var term in
+    let subst = extend ~scope ?occurs_hook env subst var term in
     (Binding.({var; term})::prefix, subst)
   in
   let rec helper x y acc =
@@ -204,21 +229,6 @@ let unify ?(subsume=false) ?(scope=Term.Var.non_local_scope) env subst x y =
     Some (helper x y ([], subst))
   with Term.Different_shape _ | Unification_failed | Occurs_check -> None
 
-let apply env subst x = Obj.magic @@
-  map env subst (Term.repr x)
-    ~fvar:(fun v -> Term.repr v)
-    ~fval:(fun x -> Term.repr x)
-
-let shallow_apply env subst x =
-  match Term.var x with
-  | Some v -> begin
-    match walk env subst v with
-    | WC v
-    | Var v   -> Obj.magic v
-    | Value x -> Obj.magic x
-    end
-  | None -> x
-
 let freevars env subst x =
   Env.freevars env @@ apply env subst x
 
@@ -226,6 +236,7 @@ let is_bound = Term.VarMap.mem
 
 let merge env subst1 subst2 = Term.VarMap.fold (fun var term -> function
   | Some s  -> begin
+    (* TODO(ProgMiner): need occurs_hook here? *)
     match unify env s (Obj.magic var) term with
     | Some (_, s') -> Some s'
     | None         -> None
@@ -240,6 +251,7 @@ let merge_disjoint env =
 
 let subsumed env subst =
   Term.VarMap.for_all (fun var term ->
+    (* TODO(ProgMiner): need occurs_hook here? *)
     match unify env subst (Obj.magic var) term with
     | Some ([], _)  -> true
     | _             -> false
