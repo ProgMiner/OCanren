@@ -68,13 +68,15 @@ val structural :
 
 exception Occurs_check
 
+type term_vars = { get: 'a. int -> 'a ilogic }
+
 (** Call [bind_occurs_hook var reifier hook] adds occurs hook for future use.
  If while any of substituions in next states occurs check will failed on given variable,
   occurs hook will be called to suggest another term instead of recursive.
 
  Occurs hook may raise [Occurs_check] to signal that suggestion cannot be provided.
 *)
-val bind_occurs_hook : 'a -> ('a, 'b) Reifier.t -> (int -> 'b -> 'a) -> goal
+val bind_occurs_hook : 'a -> ('a, 'b) Reifier.t -> (term_vars -> int -> 'b -> 'a) -> goal
 
 (** [conj s1 s2] creates a goal, which is a conjunction of its arguments *)
 val conj : goal -> goal -> goal
