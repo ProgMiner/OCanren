@@ -298,7 +298,7 @@ module State =
           match Disequality.recheck env subst ctrs prefix with
           | None      -> None
           | Some ctrs ->
-            let next_state = {st with subst; ctrs} in
+            let next_state = {st with subst; ctrs; occurs_hooks = Term.VarMap.empty} in
             if PrunesControl.is_exceeded ()
             then begin
               let () = PrunesControl.reset_cur_counter () in

@@ -75,6 +75,8 @@ type term_vars = { get: 'a. int -> 'a ilogic }
   occurs hook will be called to suggest another term instead of recursive.
 
  Occurs hook may raise [Occurs_check] to signal that suggestion cannot be provided.
+
+ Hooks must be set immediately before unification, because they disappear after unification.
 *)
 val bind_occurs_hook : 'a -> ('a, 'b) Reifier.t -> (term_vars -> int -> 'b -> 'a) -> goal
 
