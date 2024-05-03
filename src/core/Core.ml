@@ -419,8 +419,7 @@ exception Occurs_check = Subst.Occurs_check
 
 type term_vars = { get: 'a. int -> 'a ilogic }
 
-let bind_occurs_hook (x : 'a) (r : ('a, 'b) Reifier.t)
-  (h : term_vars -> int -> 'b -> 'a) : goal =
+let bind_occurs_hook x r h : goal = fun {env; subst; occurs_hooks} as st ->
   let module IM = Map.Make(Int) in
 
   let updf v = function
@@ -429,8 +428,8 @@ let bind_occurs_hook (x : 'a) (r : ('a, 'b) Reifier.t)
   | None -> Some v
   in
 
-  match Term.var x with
-  | Some x -> fun {env; occurs_hooks} as st ->
+  match Term.var @@ Subst.shallow_apply env subst x with
+  | Some x ->
     let h t =
       let vars = Term.fold t ~init:IM.empty ~fval:Fun.const
         ~fvar:(fun acc v -> IM.update v.index (updf @@ Obj.magic v) acc) in
