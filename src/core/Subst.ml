@@ -79,25 +79,25 @@ type lterm = Var of Term.Var.t | Value of Term.t | WC of Term.Var.t
 
 let walk env subst x =
   (* walk var *)
-  let rec walkv env subst v =
+  let rec walkv v =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
     Env.check_exn env v;
     if Term.Var.is_wildcard v
     then WC v
     else match v.Term.Var.subst with
-    | Some term -> walkt env subst (Obj.magic term)
+    | Some term -> walkt (Obj.magic term)
     | None ->
-        try walkt env subst (Term.VarMap.find v subst)
+        try walkt (Term.VarMap.find v subst)
         with Not_found -> Var v
   (* walk term *)
-  and walkt env subst t =
+  and walkt t =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
     match Env.var env t with
     | Some v when Term.Var.is_wildcard v -> WC v
-    | Some v -> walkv env subst v
+    | Some v -> walkv v
     | None   -> Value t
   in
-  walkv env subst x
+  walkv x
 
 (* same as [Term.map] but performs [walk] on the road *)
 let map ~fvar ~fval env subst x =
