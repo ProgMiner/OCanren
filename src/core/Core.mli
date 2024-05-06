@@ -328,7 +328,8 @@ val only_head : goal -> goal
 (** The goal [is_var x] requires that [x] is a variable in the current state *)
 val is_var : 'a ilogic -> goal
 
-(** The goal [is_not_var x] requires that [x] is not a variable (but may contain variables) in the current state *)
+(** The goal [is_not_var x] requires that [x] is not a variable (but may contain variables)
+  in the current state *)
 val is_not_var : 'a ilogic -> goal
 
 module PrunesControl : sig

@@ -196,4 +196,14 @@ let rec retrieve ?(n=(-1)) s =
   | None          -> [], Nil
   | Some (x, s)  -> let xs, s = retrieve ~n:(n-1) s in x::xs, s
 
+let rec take_while p s =
+  match msplit s with
+  | Some (x, s) when p x -> Cons (x, from_fun (fun () -> take_while p s))
+  | _ -> Nil
+
 let take ?n s = fst @@ retrieve ?n s
+
+let rec take_st n s =
+  if n <= 0 then Nil else match msplit s with
+    | Some (x, s) -> Cons (x, from_fun (fun () -> take_st (n - 1) s))
+    | None -> Nil
