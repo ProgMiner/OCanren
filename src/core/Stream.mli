@@ -83,8 +83,14 @@ val bind : 'a t -> ('a -> 'b t) -> 'b t
 (** [retrieve ~n:n s] returns the list of [n]-first elements of [s] and the rest of the stream *)
 val retrieve : ?n:int -> 'a t -> 'a list * 'a t
 
+(** [take_while p s] gets stream of first elements satisfies [p] *)
+val take_while : ('a -> bool) -> 'a t -> 'a t
+
 (** [take ~n:n s] returns the list of [n]-first elements of [s] *)
 val take : ?n:int -> 'a t -> 'a list
+
+(** [take_st n s] gets [n]-first elements of [s] *)
+val take_st : int -> 'a t -> 'a t
 
 (** [hd s] gets a head of the stream *)
 val hd : 'a t -> 'a

@@ -449,7 +449,7 @@ let is_var (x : 'a ilogic) : goal = fun st ->
   then Stream.single st
   else Stream.nil
 
-let is_not_var (x : 'a ilogic) : goal = fun {env; subst} as st ->
+let is_not_var (x : 'a ilogic) : goal = fun st ->
   if check_is_var st x
   then Stream.nil
   else Stream.single st
