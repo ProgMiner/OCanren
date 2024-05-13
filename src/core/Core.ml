@@ -364,7 +364,7 @@ let failure _  = Stream.nil
 let only_head g st =
   let stream = g st in
   try Stream.single @@ Stream.hd stream
-  with Failure _ -> Stream.nil
+  with Invalid_argument _ -> Stream.nil
 
 let (===) x y st =
   let _t =
