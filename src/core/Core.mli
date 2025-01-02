@@ -84,6 +84,8 @@ val (|||) : goal -> goal -> goal
 *)
 val (?|) : goal list -> goal
 
+val condo2 : goal -> goal -> goal
+
 (** [conde] is a synonym for [?|] *)
 val conde : goal list -> goal
 
