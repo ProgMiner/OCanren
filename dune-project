@@ -19,7 +19,7 @@
   "The family of miniKanren derivatives has many implementations. This\none is typed embedding to OCaml. The original implementation for\nthis is in scheme and can be found at https://github.com/michaelballantyne/faster-miniKanren .\n\nFeatures:\n1) disequality constraints\n2) relational standard library: lists, nats\n")
  (depends
   (ocaml
-   (>= 4.10))
+   (>= 4.13))
   dune-configurator
   ocamlfind
   camlp5
