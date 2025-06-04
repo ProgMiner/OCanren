@@ -55,18 +55,17 @@ let inj f x = to_logic (GT.(gmap option) f x)
 type 'a injected = 'a ground ilogic
 type 'a groundi = 'a injected
 
-let rec reify : 'a 'b . ('a, 'b) Reifier.t -> ('a groundi, 'b logic) Reifier.t =
-  fun ra ->
+let rec reify : 'a 'b . ('a, 'b) Reifier.t -> ('a groundi, 'b logic) Reifier.t = fun ra ->
   let open Env.Monad.Syntax in
-  let* r = Reifier.reify in
   let* fa = ra in
-  Reifier.compose Reifier.reify (
+  Reifier.compose Reifier.reify begin
     let rec foo = function
     | Var (v, xs) -> Var (v, Stdlib.List.map foo xs)
     | Value t -> Value (GT.gmap ground fa t)
+    | Mu (v, x) -> Mu (v, foo x)
     in
     Env.Monad.return foo
-  )
+  end
 
 let prj_exn : 'a 'b. ('a, 'b) Reifier.t -> ('a groundi, 'b ground) Reifier.t =
   fun ra ->
