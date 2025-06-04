@@ -43,39 +43,38 @@ let logic = {
       method fmt fa fmt l = Format.fprintf fmt "%s" (this#show (Format.asprintf "%a" fa) l)
       method show fa : _ logic -> _ =
         let rec loop ?(is_head=false): ('a, 'a logic) t -> string = function
-          | Cons (h, (Var _ as tl)) ->
-              String.concat "" [if is_head then "" else "; "; fa h; " | "; loop_logic tl]
-          | Cons (h, Value tl) ->
-              String.concat "" [if is_head then "" else "; "; fa h; loop tl]
-          | Nil -> ""
+        | Nil -> ""
+        | Cons (h, Value tl) ->
+            String.concat "" [if is_head then "" else "; "; fa h; loop tl]
+        | Cons (h, tl) ->
+            String.concat "" [if is_head then "" else "; "; fa h; " | "; loop_logic tl]
         and loop_whole x = "[" ^ loop ~is_head:true x ^ "]"
         and loop_logic = function
-            | Value v -> loop v
-            | Var _ as l -> GT.show(Logic.logic) loop_whole l
-        and toplevel fa = function
-          | Var _ as l -> GT.show(Logic.logic) loop_whole l
-          | Value v -> loop_whole v
+        | Var _ as l -> GT.show(Logic.logic) loop_whole l
+        | Value v -> loop_whole v
+        | Mu (v, l) -> Printf.sprintf "{_.%d = %s}" v (loop_logic l)
         in
-        toplevel fa
+        loop_logic
     end
 }
 
 type 'a injected = ('a, 'a injected) t Logic.ilogic
 type 'a groundi = 'a injected
 
-let reify : 'a 'b . ('a, 'b) Reifier.t -> ('a groundi, 'b logic) Reifier.t =
-  fun ra ->
-    let open Env.Monad.Syntax in
-    Reifier.fix (fun self ->
-    Reifier.compose Reifier.reify
-      ( let* fa = ra in
-        let* fr = self in
-        let rec foo = function
-          | Var (v, xs) -> Var (v, Stdlib.List.map foo xs)
-          | Value x -> Value (GT.gmap t fa fr x)
-        in
-        Env.Monad.return foo
-      ))
+let reify : 'a 'b . ('a, 'b) Reifier.t -> ('a groundi, 'b logic) Reifier.t = fun ra ->
+  let open Env.Monad.Syntax in
+  let* fa = ra in
+  Reifier.fix begin fun self ->
+    Reifier.compose Reifier.reify begin
+      let* fr = self in
+      let rec foo = function
+      | Var (v, xs) -> Var (v, Stdlib.List.map foo xs)
+      | Value x -> Value (GT.gmap t fa fr x)
+      | Mu (v, x) -> Mu (v, foo x)
+      in
+      Env.Monad.return foo
+    end
+  end
 
 let rec prj_exn : ('a, 'b) Reifier.t -> ('a groundi, 'b GT.list) Reifier.t =
   let map fa fb = function
@@ -122,10 +121,10 @@ let rec inj f = function
 | x::xs -> cons x (list xs) *)
 
 let rec logic_to_ground_exn f = function
-  | Var (_, _) -> failwith "List.logic_to_ground_exn: variables inside"
+  | Var _ -> failwith "List.logic_to_ground_exn: variables inside"
   | Value Nil -> []
-  | Value (Cons (h, tl)) ->
-      f h :: logic_to_ground_exn f tl
+  | Value (Cons (h, tl)) -> f h :: logic_to_ground_exn f tl
+  | Mu _ -> failwith "List.logic_to_ground_exn: mu-binders inside"
 
 let (%) = cons
 let (%<) = fun x y -> cons x @@ cons y @@ nil ()
