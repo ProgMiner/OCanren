@@ -57,6 +57,9 @@ let varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t =
   )
   Term.VarMap.empty
 
+(* term head is a constructor with variables as arguments *)
+
+(* every right hand side must be either a variable or a term head *)
 type t = Term.t Term.VarMap.t
 
 let empty = Term.VarMap.empty
@@ -71,8 +74,7 @@ let pp ppf s =
   Term.VarMap.iter (fun x t -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) Term.pp t) s ;
   fprintf ppf "|subst}"
 
-type lterm = Var of Term.Var.t | Value of Term.t
-
+(* returns representing variable and optional term head *)
 let walk env subst =
 
   (* walk var *)
@@ -81,50 +83,26 @@ let walk env subst =
     Env.check_exn env v ;
 
     match v.Term.Var.subst with
-    | Some term -> walkt term
+    | Some term -> walkt v term
     | None ->
-        try walkt (Term.VarMap.find v subst)
-        with Not_found -> Var v
+        try walkt v (Term.VarMap.find v subst)
+        with Not_found -> v, None
 
   (* walk term *)
-  and walkt t =
+  and walkt v t =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
 
     Env.unterm_flat env t ~fvar:walkv
-      ~fval:(fun _ _ -> Value t)
-      ~fcon:(fun _ _ _ -> Value t)
+      ~fval:(fun _ _ -> v, Some t)
+      ~fcon:(fun _ _ _ -> v, Some t)
   in
 
   walkv
 
-(* same as [Term.Flat.map] but performs [walk] on the road *)
-let map ~fvar ~fval env subst x =
-  let rec deepfvar v =
-    Env.check_exn env v;
-    match walk env subst v with
-    | Var v   -> fvar v
-    | Value x -> Term.Flat.map x ~fval ~fvar:deepfvar
-  in
-  Term.Flat.map x ~fval ~fvar:deepfvar
-
-(* same as [Term.Flat.iter] but performs [walk] on the road *)
-let iter ~fvar ~fval env subst x =
-  let rec deepfvar v =
-    Env.check_exn env v;
-    match walk env subst v with
-    | Var v   -> fvar v
-    | Value x -> Term.Flat.iter x ~fval ~fvar:deepfvar
-  in
-  Term.Flat.iter x ~fval ~fvar:deepfvar
-
-exception Occurs_check
-
-let rec occurs env subst var term = iter env subst term ~fval:(fun _ _ -> ())
-  ~fvar:(fun v -> if Term.Var.equal v var then raise Occurs_check)
-
-(* [var] must be free in [subst], [term] must not be the same variable *)
+(* [var] must be free in [subst], [term] must be either a different variable or a term head *)
 let extend ~scope env subst var term =
-  if Runconf.do_occurs_check () then occurs env subst var term ;
+  (* TODO(ProgMiner): implement occurs check in other place *)
+  (* if Runconf.do_occurs_check () then occurs env subst var term; *)
 
   (* It is safe to modify variables destructively if the case of scopes match.
    * There are two cases:
@@ -139,40 +117,94 @@ let extend ~scope env subst var term =
   end else
     Term.VarMap.add var term subst
 
+(* [var] must be free in [subst], [term] mustn't be a variable or a mu-binder.
+ * [inject] "x = f(t1, ..., tn)" replaces terms "ti" with fresh variables "yi",
+ * then injects "yi = ti" in [subst], then extends [subst] with "x = f(y1, ..., yn)"
+ *)
+let inject ~scope env subst =
+  let extend = extend ~scope env in
+  let subst = ref subst in
+
+  let rec inject var term =
+    let non_var term =
+      let var = Env.fresh ~scope env in
+      inject var term ;
+      Term.repr var
+    in
+
+    let hlp term = Env.unterm_flat env term ~fvar:Term.repr
+      ~fval:(fun _ _ -> non_var term) ~fcon:(fun _ _ _ -> non_var term)
+    in
+
+    let term = Term.map_head hlp term in
+    subst := extend !subst var term
+  in
+
+  fun var term ->
+    inject var term ;
+    !subst
+
+(* we must distinguish between regular extending and "prefire" to hold substitution prefix
+ * in consistent state, e.g. for substitution [x -> 1, y -> 1] when we unify "x = y"
+ * we mustn't add [x -> y] in prefix since actual substitution doesn't extending
+ *)
+type union_extend = Extend | Prefire
+
+let union env subst x y =
+  let x, t1 = walk env subst x in
+  let y, t2 = walk env subst y in
+
+  if Term.Var.equal x y then None, None
+  else
+    let x, y = match t2 with
+    | Some _ -> y, x
+    | None -> x, y
+    in
+
+    let ext, ts = match t1, t2 with
+    | Some t1, Some t2 -> Prefire, Some (t1, t2)
+    | _ -> Extend, None
+    in
+
+    Some (ext, y, (Term.repr x)), ts
+
 exception Unification_failed
 
 let unify ?(scope=Term.Var.non_local_scope) env subst x y =
+  let extend = extend ~scope env in
+
   (* The idea is to do the unification and collect the unification prefix during the process *)
-  let extend var term (prefix, subst) =
-    let subst = extend ~scope env subst var term in
-    Binding.{ var ; term }::prefix, subst
-  in
+  let extend_prefix prefix var term = Binding.{ var ; term }::prefix in
 
   let rec helper x y acc = Term.Flat.fold2 x y ~init:acc
-    ~fvar:begin fun ((_, subst) as acc) x y ->
-      match walk env subst x, walk env subst y with
-      | Var x, Var y ->
-        if Term.Var.equal x y then acc
-        else extend x (Term.repr y) acc
-      | Var x, Value y -> extend x y acc
-      | Value x, Var y -> extend y x acc
-      | Value x, Value y  -> helper x y acc
+    ~fvar:begin fun ((prefix, subst) as acc) x y ->
+      let ext, ts = union env subst x y in
+
+      let acc = match ext with
+      | None -> acc
+      | Some (Extend, x, y) -> extend_prefix prefix x y, extend subst x y
+      | Some (Prefire, x, y) -> prefix, extend subst x y
+      in
+
+      match ts with
+      | None -> acc
+      | Some (x, y) -> helper x y acc
     end
     ~fval:begin fun acc _ x y ->
       if x = y then acc
       else raise Unification_failed
     end
-    ~fk:begin fun ((_, subst) as acc) l v y ->
-      match walk env subst v with
-      | Var v   -> extend v y acc
-      | Value x -> helper x y acc
+    ~fk:begin fun ((prefix, subst) as acc) _ x y ->
+      match walk env subst x with
+      | x, None -> extend_prefix prefix x y, inject ~scope env subst x y
+      | _, Some x -> helper x y acc
     end
   in
 
   try
     let x, y = Term.(repr x, repr y) in
     Some (helper x y ([], subst))
-  with Term.Flat.Different_shape _ | Unification_failed | Occurs_check -> None
+  with Term.Flat.Different_shape _ | Unification_failed -> None
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
@@ -186,8 +218,34 @@ let subsumed env subst = Term.VarMap.for_all @@ fun var term ->
   | Some ([], _) -> true
   | _            -> false
 
-let apply env subst x =
-  Obj.magic @@ map env subst (Term.repr x) ~fvar:Term.repr ~fval:(fun _ -> Term.repr)
+let image env subst =
+  let[@inline] unvar x =
+    let non_var () = invalid_arg
+      @@ Format.asprintf "OCanren fatal: not a term head in substitution right hand side %a"
+        pp subst
+    in
+    Env.unterm_flat env x ~fvar:Fun.id ~fval:(fun _ _ -> non_var ()) ~fcon:(fun _ _ _ -> non_var ())
+  in
+
+  let vis = Term.VarTbl.create 16 in
+  let rec hlp x = match walk env subst x with
+  | x, None -> Term.repr x
+  | x, Some t ->
+    if Term.VarTbl.mem vis x then begin
+      Term.VarTbl.replace vis x true ;
+      Term.repr x
+    end else begin
+      Term.VarTbl.add vis x false ;
+      let t = Term.map_head (fun x -> hlp (unvar x)) t in
+      let t = if Term.VarTbl.find vis x then Term.repr @@ Term.Mu.make x t else t in
+      Term.VarTbl.remove vis x ;
+      t
+    end
+  in
+
+  hlp
+
+let apply env subst = Term.Flat.map ~fvar:(image env subst) ~fval:(fun _ -> Term.repr)
 
 let freevars env subst x = Env.freevars env @@ apply env subst x
 
@@ -197,4 +255,4 @@ module Answer =
     type t = Term.t
   end
 
-let reify = apply
+let reify env subst x = apply env subst (Term.repr x)
