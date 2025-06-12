@@ -105,6 +105,8 @@ module Disjunct :
     val simplify : Env.t -> Subst.t -> t -> t option
 
     val reify : Env.t -> Subst.t -> t -> Subst.Binding.t list
+
+    val reify_t : Env.t -> Subst.t -> t -> t
   end = struct
 
     type t = Term.t Term.VarMap.t
@@ -222,6 +224,8 @@ module Disjunct :
 
     let reify env subst t =
       Term.VarMap.fold (fun var term xs -> Subst.(Binding.({var; term})::xs)) t []
+
+    let reify_t env subst = Term.VarMap.map @@ Subst.reify env subst
   end
 
 module Conjunct :
@@ -254,6 +258,8 @@ module Conjunct :
     val diff : Env.t -> Subst.t -> t -> t -> t * t
 
     val reify : Env.t -> Subst.t -> t -> 'a -> Answer.t list
+
+    val reify_t : Env.t -> Subst.t -> t -> t
   end = struct
 
     let next_id = ref 0
@@ -387,6 +393,7 @@ module Conjunct :
           ) |> List.concat
       ) t [Answer.empty]
 
+    let reify_t env subst = M.map @@ Disjunct.reify_t env subst
   end
 
 type t = Conjunct.t Term.VarMap.t
@@ -440,3 +447,5 @@ let project env subst cstore fv =
   Conjunct.(split @@ project env subst (combine env subst cstore) fv)
 
 let reify env subst cstore = Conjunct.reify env subst @@ combine env subst cstore
+
+let reify_t env subst = Term.VarMap.map @@ Conjunct.reify_t env subst

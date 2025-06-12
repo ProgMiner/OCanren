@@ -51,4 +51,6 @@ module Answer :
 
 val reify : Env.t -> Subst.t -> t -> 'a -> Answer.t list
 
+val reify_t : Env.t -> Subst.t -> t -> t
+
 val pp : Format.formatter -> t -> unit

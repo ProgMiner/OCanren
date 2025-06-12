@@ -341,6 +341,8 @@ module State =
         in
         Answer.make env @@ helper Term.VarSet.empty x
       end
+
+    let reify_constraints { env ; subst ; ctrs } = Disequality.reify_t env subst ctrs
   end
 
 let (!!!) = Obj.magic
@@ -798,5 +800,5 @@ let reify_in_empty reifier x =
   reifier (State.env st) x
 
 let trace_diseq : goal = fun st ->
-  Format.printf "%a\n%!" Disequality.pp (State.constraints st) ;
+  Format.printf "%a\n%!" Disequality.pp (State.reify_constraints st) ;
   success st
