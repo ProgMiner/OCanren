@@ -71,26 +71,37 @@ type value
 
 val repr : 'a -> t
 
+(* [unterm ~fvar ~fval ~fcon x] matches term using
+ * [fvar x] for variable [x], [fval tag x] for primitive [x]
+ * and [fcon tag size arg x] for constructor [x] of form "tag(arg_1, ..., arg_size)"
+ *)
+val[@inline] unterm
+  : fvar:(Var.t -> 'a)
+ -> fval:(int -> value -> 'a)
+ -> fcon:(int -> int -> (int -> t) -> 'a)
+ -> t -> 'a
+
 val show : t -> string
 val pp : Format.formatter -> t -> unit
 
-(* [var x] if [x] is logic variable returns it, otherwise returns [None] *)
-val var : 'a -> Var.t option
+val equal   : t -> t -> bool
+val compare : t -> t -> int
+val hash    : t -> int
 
 (* [map ~fvar ~fval x] map over OCaml's value extended with logic variables;
  *   handles primitive types with the help of [fval] and logic variables with the help of [fvar]
  *)
-val map : fvar:(Var.t -> t) -> fval:(value -> t) -> t -> t
+val map : fvar:(Var.t -> t) -> fval:(int -> value -> t) -> t -> t
 
 (* [iter ~fvar ~fval x] iteration over OCaml's value extended with logic variables;
  *   handles primitive types with the help of [fval] and logic variables with the help of [fvar]
  *)
-val iter : fvar:(Var.t -> unit) -> fval:(value -> unit) -> t -> unit
+val iter : fvar:(Var.t -> unit) -> fval:(int -> value -> unit) -> t -> unit
 
 (* [fold ~fvar ~fval ~init x] fold over OCaml's value extended with logic variables;
  *   handles primitive types with the help of [fval] and logic variables with the help of [fvar]
  *)
-val fold : fvar:('a -> Var.t -> 'a) -> fval:('a -> value -> 'a) -> init:'a -> t -> 'a
+val fold : fvar:('a -> Var.t -> 'a) -> fval:('a -> int -> value -> 'a) -> init:'a -> t -> 'a
 
 exception Different_shape of int * int
 
@@ -104,10 +115,6 @@ type label = L | R
  *)
 val fold2 :
   fvar:('a -> Var.t -> Var.t -> 'a) ->
-  fval:('a -> value -> value -> 'a)  ->
+  fval:('a -> int -> value -> value -> 'a) ->
   fk:('a -> label -> Var.t -> t -> 'a) ->
   init:'a -> t -> t -> 'a
-
-val equal   : t -> t -> bool
-val compare : t -> t -> int
-val hash    : t -> int

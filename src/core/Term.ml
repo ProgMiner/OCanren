@@ -128,179 +128,179 @@ let is_val t = is_int t || is_str t || is_dbl t
 let check_val t =
   if not @@ is_val t then invalid_arg @@ sprintf "OCanren fatal: invalid value tag (%d)" t
 
-let var x =
-  let x = Obj.repr x in
+let[@inline] unterm ~fvar ~fval ~fcon x =
   let tx = Obj.tag x in
   if is_box tx then
     let sx = Obj.size x in
-    if Var.has_var_structure tx sx x then Some (obj x) else None
-  else None
+    if Var.has_var_structure tx sx x then fvar (obj x)
+    else fcon tx sx (Obj.field x)
+  else begin
+    check_val tx ;
+    fval tx x
+  end
 
-let pp =
-  let open Format in
-  let rec helper ppf x =
-    let tx = Obj.tag x in
-    if is_box tx
-    then (
-      let sx = Obj.size x in
-      if Var.has_var_structure tx sx x
-      then (
-        let v = obj x in
-        match v.Var.constraints with
-        | [] -> Var.describe ppf v
-        | cs ->
-          fprintf
-            ppf
-            "%a{=/= %a}"
-            Var.describe
-            v
-            (pp_print_list ~pp_sep:(fun ppf () -> fprintf ppf "; ") helper)
-            cs)
-      else (
-        let rec inner i : unit =
-          if i < sx
-          then (
-            if i > 0 then fprintf ppf ", ";
-            helper ppf (Obj.field x i);
-            inner (i + 1))
-        in
-        fprintf ppf "boxed %d <" tx;
-        inner 0;
-        fprintf ppf ">"))
-    else (
-      check_val tx;
-      if tx = Obj.int_tag
-      then fprintf ppf "int<%d>" @@ obj x
-      else if tx = Obj.string_tag
-      then fprintf ppf "string<%s>" @@ obj x
-      else if tx = Obj.double_tag
-      then fprintf ppf "double<%e>" @@ obj x
-      else failwith "Dynamic pretty printing of some special tags is not supported")
-  in
-  helper
+let [@inline] make_con tx sx xi =
+  let x = Obj.new_block tx sx in
+  for i = 0 to sx - 1 do
+    Obj.set_field x i (xi i)
+  done ;
+  x
+
+let rec pp ppf = let open Format in unterm
+  ~fvar:(Var.pp pp ppf)
+  ~fval:begin fun tx x ->
+    if is_int tx then fprintf ppf "int<%d>" @@ obj x
+    else if is_str tx then fprintf ppf "string<%s>" @@ obj x
+    else if is_dbl tx then fprintf ppf "double<%e>" @@ obj x
+    else assert false
+  end
+  ~fcon:begin fun tx sx xi ->
+    let rec inner i =
+      if i < sx then begin
+        if i > 0 then fprintf ppf ", " ;
+        pp ppf (xi i) ;
+        inner (i + 1)
+      end
+    in
+    fprintf ppf "boxed %d <" tx ;
+    inner 0 ;
+    fprintf ppf ">"
+  end
 
 let show x = Format.asprintf "%a" pp x
 
-let rec map ~fvar ~fval x =
-  let tx = Obj.tag x in
-  if (is_box tx) then
-    let sx = Obj.size x in
-    if Var.has_var_structure tx sx x then
-      fvar @@ obj x
-    else
-      let y = Obj.dup x in
-      for i = 0 to sx - 1 do
-        Obj.set_field y i @@ map ~fvar ~fval (Obj.field x i)
-      done;
-      y
-  else begin
-    check_val tx;
-    fval x
+let equal =
+  let[@inline] unterm ?(fvar=fun _ -> false) ?(fval=fun _ _ -> false) ?(fcon=fun _ _ _ -> false) x
+    = unterm x ~fvar ~fval ~fcon
+  in
+  let rec hlp x y = unterm x
+    ~fvar:begin fun x -> unterm y
+      ~fvar:(fun y -> Var.equal x y && List.equal hlp x.Var.constraints y.Var.constraints)
+    end
+    ~fval:(fun _ x -> unterm y ~fval:(fun _ y -> x = y))
+    ~fcon:begin fun tx sx xi -> unterm y
+      ~fcon:begin fun ty sy yi ->
+        if tx = ty && sx = sy then
+          let rec inner i =
+            if i < sx then hlp (xi i) (yi i) && inner (i + 1)
+            else true
+          in
+          inner 0
+        else false
+      end
+    end
+  in
+  hlp
+
+let compare' = compare
+
+let compare x y = unterm x
+  ~fvar:begin fun x -> unterm y
+    ~fvar:begin fun y ->
+      let res = Var.compare x y in
+      if res <> 0 then res
+      else List.compare compare x.Var.constraints y.Var.constraints
+    end
+    ~fval:(fun _ _ -> -1)
+    ~fcon:(fun _ _ _ -> -1)
+  end
+  ~fval:begin fun _ x -> unterm y
+    ~fvar:(fun _ -> 1)
+    ~fval:(fun _ y -> compare' x y)
+    ~fcon:(fun _ _ _ -> -1)
+  end
+  ~fcon:begin fun tx sx xi -> unterm y
+    ~fvar:(fun _ -> 1)
+    ~fval:(fun _ _ -> 1)
+    ~fcon:begin fun ty sy yi ->
+      if tx <> ty then compare' tx ty
+      else if sx <> sy then compare' sx sy
+      else
+        let rec inner i =
+          if i < sx then
+            let res = compare (xi i) (yi i) in
+            if res <> 0 then res else inner (i + 1)
+          else 0
+        in
+        inner 0
+    end
   end
 
-let rec iter ~fvar ~fval x =
-  let tx = Obj.tag x in
-  if (is_box tx) then
-    let sx = Obj.size x in
-    if Var.has_var_structure tx sx x then
-      fvar @@ obj x
-    else
-      for i = 0 to sx - 1 do
-        iter ~fvar ~fval (Obj.field x i)
-      done;
-  else begin
-    check_val tx;
-    fval x
+let rec hash x = unterm x
+  ~fval:(fun _ -> Hashtbl.hash)
+  ~fvar:begin fun x ->
+    let cs = List.map hash x.Var.constraints in
+    Hashtbl.hash (Var.hash x, cs)
+  end
+  ~fcon:begin fun tx sx xi ->
+    let rec inner i =
+      if i < sx then (hash @@ xi i)::(inner @@ i + 1)
+      else []
+    in
+
+    Hashtbl.hash (tx, inner 0)
   end
 
-let rec fold ~fvar ~fval ~init x =
-  let tx = Obj.tag x in
-  if (is_box tx) then
-    let sx = Obj.size x in
-    if Var.has_var_structure tx sx x then
-      fvar init @@ obj x
-    else
+let map ~fvar ~fval =
+  let rec hlp x = unterm x ~fvar ~fval
+    ~fcon:(fun tx sx xi -> make_con tx sx @@ fun i -> hlp @@ xi i)
+  in
+  hlp
+
+let iter ~fvar ~fval =
+  let rec hlp x = unterm x ~fvar ~fval
+    ~fcon:begin fun _ sx xi ->
+      for i = 0 to sx - 1 do
+        hlp @@ xi i
+      done
+    end
+  in
+  hlp
+
+let fold ~fvar ~fval ~init =
+  let rec hlp acc x = unterm x ~fvar:(fvar acc) ~fval:(fval acc)
+    ~fcon:begin fun _ sx xi ->
       let rec inner i acc =
-        if i < sx then
-          let acc = fold ~fvar ~fval ~init:acc (Obj.field x i) in
-          inner (i+1) acc
+        if i < sx then inner (i + 1) @@ hlp acc @@ xi i
         else acc
       in
-      inner 0 init
-  else begin
-    check_val tx;
-    fval init x
-  end
+      inner 0 acc
+    end
+  in
+  hlp init
 
 exception Different_shape of int * int
 
 type label = L | R
 
-let rec fold2 ~fvar ~fval ~fk ~init x y =
-  let tx, ty = Obj.tag x, Obj.tag y in
-  match is_box tx, is_box ty with
-  | true, true -> begin
-    let sx, sy = Obj.size x, Obj.size y in
-    match Var.has_var_structure tx sx x, Var.has_var_structure ty sy y with
-    | true, true    -> fvar init (obj x) (obj y)
-    | true, false   -> fk init L (obj x) y
-    | false, true   -> fk init R (obj y) x
-    | false, false  ->
-      if (tx = ty) && (sx = sy) then
-        let fx, fy = Obj.field x, Obj.field y in
-        let rec inner i acc =
-          if i < sx then
-            let acc = fold2 ~fvar ~fval ~fk ~init:acc (fx i) (fy i) in
-            inner (i+1) acc
-          else acc
-        in
-        inner 0 init
-      else raise (Different_shape (tx, ty))
+let fold2 ~fvar ~fval ~fk ~init =
+  let rec hlp acc x y = unterm x
+    ~fvar:begin fun x -> unterm y
+      ~fvar:(fun y -> fvar acc x y)
+      ~fval:(fun _ _ -> fk acc L x y)
+      ~fcon:(fun _ _ _ -> fk acc L x y)
     end
-  | true, false ->
-    check_val ty;
-    let sx = Obj.size x in
-    if Var.has_var_structure tx sx x then fk init L (obj x) y else raise (Different_shape (tx, ty))
-  | false, true ->
-    check_val tx;
-    let sy = Obj.size y in
-    if Var.has_var_structure ty sy y then fk init R (obj y) x else raise (Different_shape (tx, ty))
-  | false, false ->
-    check_val tx;
-    check_val ty;
-    if tx = ty then
-      fval init x y
-    else raise (Different_shape (tx, ty))
+    ~fval:begin fun tx x -> unterm y
+      ~fvar:(fun y -> fk acc R y x)
+      ~fval:begin fun ty y ->
+        if tx = ty then fval acc tx x y
+        else raise @@ Different_shape (tx, ty)
+      end
+      ~fcon:(fun ty _ _ -> raise @@ Different_shape (tx, ty))
+    end
+    ~fcon:begin fun tx sx xi -> unterm y
+      ~fvar:(fun y -> fk acc R y x)
+      ~fval:(fun ty _ -> raise @@ Different_shape (tx, ty))
+      ~fcon:begin fun ty sy yi ->
+        if tx = ty && sx = sy then
+          let rec inner i acc =
+            if i < sx then inner (i + 1) @@ hlp acc (xi i) (yi i)
+            else acc
+          in
+          inner 0 acc
+        else raise @@ Different_shape (tx, ty)
+      end
+    end
+  in
+  hlp init
 
-let rec equal x y =
-  try
-    fold2 x y ~init:true
-      ~fvar:(fun acc v u ->
-        acc &&
-        (Var.equal v u) &&
-        (List.length v.Var.constraints = List.length u.Var.constraints) &&
-        (List.for_all2 equal v.Var.constraints u.Var.constraints)
-      )
-      ~fval:(fun acc x y -> acc && (x = y))
-      ~fk:(fun _ _ _ _ -> false)
-  with Different_shape _ -> false
-
-let compare' = compare
-
-let rec compare x y =
-  try
-    fold2 x y ~init:0
-      ~fvar:(fun acc v u ->
-        if acc <> 0 then acc
-        else
-          let acc = Var.compare v u in
-          if acc <> 0 then acc
-          else List.fold_left2 (fun acc x y -> if acc <> 0 then acc else compare x y) 0 v.Var.constraints u.Var.constraints
-      )
-      ~fval:(fun acc x y -> if acc <> 0 then acc else (compare' x y))
-      ~fk:(fun _ _ _ _ -> -1)
-  with Different_shape (tx, ty) -> compare' tx ty
-
-let rec hash x = fold x ~init:1
-  ~fvar:(fun acc v -> Hashtbl.hash (Var.hash v, List.fold_left (fun acc x -> Hashtbl.hash (acc, hash x)) acc v.Var.constraints))
-  ~fval:(fun acc x -> Hashtbl.hash (acc, Hashtbl.hash x))

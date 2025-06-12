@@ -97,11 +97,11 @@ module Answer :
 
     let ctr_term (_, t) = t
 
-    let unctr_term (_, t) = Term.map t ~fval:Term.repr
+    let unctr_term (_, t) = Term.map t ~fval:(fun _ -> Term.repr)
       ~fvar:(fun v -> Term.repr { v with Term.Var.constraints = [] })
 
     let disequality (env, t) =
-      let rec helper acc x = Term.fold x ~init:acc ~fval:(fun acc _ -> acc)
+      let rec helper acc x = Term.fold x ~init:acc ~fval:(fun acc _ _ -> acc)
         ~fvar:begin fun acc ctr_var ->
           let var = { ctr_var with Term.Var.constraints = [] } in
           ListLabels.fold_left ctr_var.Term.Var.constraints ~init:acc
@@ -116,7 +116,7 @@ module Answer :
 
     let lift env' (env, t) =
       let vartbl = Term.VarTbl.create 31 in
-      let rec helper x = Term.map x ~fval:Term.repr
+      let rec helper x = Term.map x ~fval:(fun _ -> Term.repr)
         ~fvar:begin fun v -> Term.repr @@
           try Term.VarTbl.find vartbl v
           with Not_found ->
@@ -316,14 +316,13 @@ module State =
       match Disequality.reify env subst ctrs x with
       | [] -> (* [Answer.make env answ] *) assert false
       | diseqs -> ListLabels.map diseqs ~f:begin fun diseq ->
-        let rec helper forbidden t = Term.map t ~fval:Term.repr
+        let rec helper forbidden t = Term.map t ~fval:(fun _ -> Term.repr)
           ~fvar:begin fun v -> Term.repr @@
             if Term.VarSet.mem v forbidden then v
             else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
-                |> List.filter begin fun dt ->
-                  match Env.var env dt with
-                  | Some u -> not @@ Term.VarSet.mem u forbidden
-                  | None   -> true
+                |> List.filter begin Env.unterm env
+                  ~fvar:(fun u -> not @@ Term.VarSet.mem u forbidden)
+                  ~fval:(fun _ _ -> true) ~fcon:(fun _ _ _ -> true)
                 end
                 |> List.map (fun x -> helper (Term.VarSet.add v forbidden) x)
                 (* TODO: represent [Var.constraints] as [Set];

@@ -90,9 +90,9 @@ let walk env subst =
   and walkt t =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
 
-    match Env.var env t with
-    | Some v -> walkv v
-    | None   -> Value t
+    Env.unterm env t ~fvar:walkv
+      ~fval:(fun _ _ -> Value t)
+      ~fcon:(fun _ _ _ -> Value t)
   in
 
   walkv
@@ -119,7 +119,7 @@ let iter ~fvar ~fval env subst x =
 
 exception Occurs_check
 
-let rec occurs env subst var term = iter env subst term ~fval:(fun _ -> ())
+let rec occurs env subst var term = iter env subst term ~fval:(fun _ _ -> ())
   ~fvar:(fun v -> if Term.Var.equal v var then raise Occurs_check)
 
 (* [var] must be free in [subst], [term] must not be the same variable *)
@@ -158,7 +158,7 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
       | Value x, Var y -> extend y x acc
       | Value x, Value y  -> helper x y acc
     end
-    ~fval:begin fun acc x y ->
+    ~fval:begin fun acc _ x y ->
       if x = y then acc
       else raise Unification_failed
     end
@@ -186,7 +186,8 @@ let subsumed env subst = Term.VarMap.for_all @@ fun var term ->
   | Some ([], _) -> true
   | _            -> false
 
-let apply env subst x = Obj.magic @@ map env subst (Term.repr x) ~fvar:Term.repr ~fval:Term.repr
+let apply env subst x =
+  Obj.magic @@ map env subst (Term.repr x) ~fvar:Term.repr ~fval:(fun _ -> Term.repr)
 
 let freevars env subst x = Env.freevars env @@ apply env subst x
 

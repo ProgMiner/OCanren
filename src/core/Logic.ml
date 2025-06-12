@@ -81,18 +81,19 @@ module Reifier = struct
   type ('a, 'b) t = ('a -> 'b) Env.Monad.t
 
   let rec reify : ('a ilogic, 'a logic) t =
-    fun env t ->
-      match Term.var t with
-      | None -> Value (Obj.magic t)
-      | Some v ->
-        let i, cs = Term.Var.reify (reify env) v in
+    fun env t -> Term.unterm t
+      ~fval:(fun _ _ -> Value (Obj.magic t))
+      ~fcon:(fun _ _ _ -> Value (Obj.magic t))
+      ~fvar:begin fun x ->
+        let i, cs = Term.Var.reify (reify env) x in
         Var (i, cs)
+      end
 
   let prj_exn : ('a ilogic, 'a) t =
-    fun env t ->
-      match Term.var t with
-      | None -> Obj.magic t
-      | Some v -> raise Not_a_value
+    fun env t -> Term.unterm t
+      ~fval:(fun _ _ -> Obj.magic t)
+      ~fcon:(fun _ _ _ -> Obj.magic t)
+      ~fvar:(fun _ -> raise Not_a_value)
 
   let prj onvar env t =
     match reify env t with
