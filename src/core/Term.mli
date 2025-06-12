@@ -20,7 +20,7 @@
 (* [Term] encapsulates unsafe operations on untyped OCaml's values extended with the logic variables *)
 
 (* [t] type of untyped OCaml term *)
-type t = Obj.t
+type t
 
 (* [Var] logic variables and operations on them *)
 module Var :
@@ -46,7 +46,7 @@ module Var :
 
     val make : env:env -> scope:scope -> int -> t
 
-    val reify : ('a -> 'b) -> t -> int * 'b list
+    val reify : (term -> 'b) -> t -> int * 'b list
 
     val equal : t -> t -> bool
     val compare : t -> t -> int
