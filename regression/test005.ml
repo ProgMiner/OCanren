@@ -35,6 +35,7 @@ module GTyp = struct
         let rec foo = function
           | Var (v, xs) -> Var (v, Stdlib.List.map foo xs)
           | Value x -> Value (GT.gmap t rstring fr x)
+          | Mu (v, x) -> Mu (v, foo x)
         in
         Env.Monad.return foo
     ))
@@ -95,9 +96,8 @@ let () =
   run_lam    1 q qh (REPR (fun q -> lookupo varX (inj_list_p [(varY, v varY); (varX, v varX)]) q    ));
 
   run_string  1 q qh (REPR (fun q -> lookupo    q (inj_list_p [(varY, v varY); (varX, v varX)]) (v varX)  ));
-  run_string  1 q qh (REPR (fun q -> lookupo    q (inj_list_p [(varY, v varY); (varX, v varX)]) (v varY)  ));
+  run_string  1 q qh (REPR (fun q -> lookupo    q (inj_list_p [(varY, v varY); (varX, v varX)]) (v varY)  ))
 
-  run_typ    1 q qh (REPR (fun q -> infero (abs varX (app (v varX) (v varX)))                q))
 
 let show_env_logic = show(List.logic) @@ show(Pair.logic) (show(logic) (fun s -> s)) show_llam
 
@@ -116,4 +116,5 @@ let () =
   runT     1   q   qh (REPR (fun q -> infero (abs varX (v varX)) q                                  ));
   runT     1   q   qh (REPR (fun q -> infero (abs varF (abs varX (app (v varF) (v varX)))) q        ));
   runT     1   q   qh (REPR (fun q -> infero (abs varX (abs varF (app (v varF) (v varX)))) q        ));
+  runT     1   q   qh (REPR (fun q -> infero (abs varX (app (v varX) (v varX)))            q        ));
   runL     1   q   qh (REPR (fun q -> infero q (arr (p varX) (p varX))                              ))
