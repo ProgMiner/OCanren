@@ -27,6 +27,7 @@ module List = Stdlib.List
 @type 'a logic =
 | Var   of GT.int * 'a logic GT.list
 | Value of 'a
+| Mu    of GT.int * 'a logic
 with show, gmap, html, eq, compare, foldl, foldr, fmt
 
 let logic = {logic with
@@ -43,6 +44,7 @@ let logic = {logic with
         | Value a -> fa ppf a
         | Var (n, []) -> Format.fprintf ppf "_.%d" n
         | Var (n, cs) -> Format.fprintf ppf "_.%d =/= [ %a ]" n (Format.pp_print_list self) cs
+        | Mu (n, a) -> Format.fprintf ppf "mu %d <%a>" n self a
         in
         self
 
@@ -56,6 +58,7 @@ let logic = {logic with
                | _  -> sprintf " %s" (GT.show(GT.list) (fun l -> "=/= " ^ fself () l) cs)
                in
                sprintf "_.%d%s" i c
+             method! c_Mu _ _ n x = sprintf "mu %d <%s>" n (fself () x)
              method! c_Value _ _ x = fa x
            end)
           ()
@@ -68,7 +71,7 @@ exception Not_a_value
 let to_logic x = Value x
 
 let from_logic = function
-| Var _ -> raise Not_a_value
+| Var _ | Mu _ -> raise Not_a_value
 | Value x -> x
 
 type 'a ilogic = Term.t
@@ -84,7 +87,7 @@ module Reifier = struct
     fun env t -> Term.unterm t
       ~fval:(fun _ _ -> Value (Obj.magic t))
       ~fcon:(fun _ _ _ -> Value (Obj.magic t))
-      ~fmu:(fun _ -> failwith "unreachable")
+      ~fmu:(fun x -> failwith "unreachable")
       ~fvar:begin fun x ->
         let i, cs = Term.Var.reify (reify env) x in
         Var (i, cs)
@@ -97,10 +100,13 @@ module Reifier = struct
       ~fvar:(fun _ -> raise Not_a_value)
       ~fmu:(fun _ -> raise Not_a_value)
 
-  let prj onvar env t =
-    match reify env t with
-    | Var (v, _) -> onvar v
+  let prj onvar onmu env =
+    let rec hlp = function
     | Value x -> x
+    | Var (v, _) -> onvar v
+    | Mu (v, b) -> onmu v (hlp b)
+    in
+    fun t -> hlp @@ reify env t
 
   let apply r (env, a) = r env a
 
@@ -126,6 +132,9 @@ module Reifier = struct
       | Value t ->
         let+ inner = fv (return t) in
         Value inner
+      | Mu (v, t) ->
+        (* TODO(ProgMiner): what is it? *)
+        failwith "OCanren fatal: not implemented"
 
   let rec zed f x = f (zed f) x
 end
