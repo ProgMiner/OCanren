@@ -316,19 +316,22 @@ module State =
 
     (* always returns non-empty list *)
     let reify x { env ; subst ; ctrs } =
-      let answ = Subst.reify env subst x in
+      (* TODO(ProgMiner): we may lose constraints on some variables that occurs in constraints
+        but not in original answer *)
       match Disequality.reify env subst ctrs x with
       | [] -> (* [Answer.make env answ] *) assert false
       | diseqs -> ListLabels.map diseqs ~f:begin fun diseq ->
-        let rec helper forbidden t = Term.unsafe_map t ~fval:(fun _ -> Term.repr)
-          ~fvar:begin fun v -> Term.repr @@
+        let rec helper : 'a . _ -> 'a -> _ = fun forbidden t ->
+          (* we must apply substitution here to reify constraint *)
+          let t = Subst.reify env subst t in
+          Term.unsafe_map t ~fval:(fun _ -> Term.repr) ~fvar:begin fun v -> Term.repr @@
             if Term.VarSet.mem v forbidden then v
             else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
                 |> List.filter begin Env.unterm env
                   ~fvar:(fun u -> not @@ Term.VarSet.mem u forbidden)
                   ~fval:(fun _ _ -> true) ~fcon:(fun _ _ _ -> true) ~fmu:(fun _ -> true)
                 end
-                |> List.map (fun x -> helper (Term.VarSet.add v forbidden) x)
+                |> List.map (helper @@ Term.VarSet.add v forbidden)
                 (* TODO: represent [Var.constraints] as [Set];
                  * TODO: hide all manipulations on [Var.t] inside [Var] module;
                  *)
@@ -336,7 +339,7 @@ module State =
               }
           end
         in
-        Answer.make env @@ helper Term.VarSet.empty answ
+        Answer.make env @@ helper Term.VarSet.empty x
       end
   end
 
@@ -797,4 +800,3 @@ let reify_in_empty reifier x =
 let trace_diseq : goal = fun st ->
   Format.printf "%a\n%!" Disequality.pp (State.constraints st) ;
   success st
-
