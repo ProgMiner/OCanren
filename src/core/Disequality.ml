@@ -190,7 +190,7 @@ module Disjunct :
        *)
       let hlp var term =
         Term.VarSet.mem var fv ||
-        Env.unterm env term ~fvar:(fun x -> Term.VarSet.mem x fv)
+        Env.unterm_flat env term ~fvar:(fun x -> Term.VarSet.mem x fv)
           ~fval:(fun _ _ -> false) ~fcon:(fun _ _ _ -> false)
       in
       Term.VarMap.for_all hlp t
@@ -429,7 +429,7 @@ let recheck env subst cstore bs =
       ~f:begin fun cstore Subst.Binding.{ var ; term } ->
         let cstore = helper var cstore in
         (* log "cstore = %a" pp cstore; *)
-        Env.unterm env term ~fvar:(fun u -> helper u cstore)
+        Env.unterm_flat env term ~fvar:(fun u -> helper u cstore)
           ~fval:(fun _ _ -> cstore) ~fcon:(fun _ _ _ -> cstore)
       end
     in

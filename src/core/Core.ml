@@ -320,13 +320,13 @@ module State =
       match Disequality.reify env subst ctrs x with
       | [] -> (* [Answer.make env answ] *) assert false
       | diseqs -> ListLabels.map diseqs ~f:begin fun diseq ->
-        let rec helper forbidden t = Term.map t ~fval:(fun _ -> Term.repr)
+        let rec helper forbidden t = Term.unsafe_map t ~fval:(fun _ -> Term.repr)
           ~fvar:begin fun v -> Term.repr @@
             if Term.VarSet.mem v forbidden then v
             else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
                 |> List.filter begin Env.unterm env
                   ~fvar:(fun u -> not @@ Term.VarSet.mem u forbidden)
-                  ~fval:(fun _ _ -> true) ~fcon:(fun _ _ _ -> true)
+                  ~fval:(fun _ _ -> true) ~fcon:(fun _ _ _ -> true) ~fmu:(fun _ -> true)
                 end
                 |> List.map (fun x -> helper (Term.VarSet.add v forbidden) x)
                 (* TODO: represent [Var.constraints] as [Set];

@@ -84,6 +84,7 @@ module Reifier = struct
     fun env t -> Term.unterm t
       ~fval:(fun _ _ -> Value (Obj.magic t))
       ~fcon:(fun _ _ _ -> Value (Obj.magic t))
+      ~fmu:(fun _ -> failwith "unreachable")
       ~fvar:begin fun x ->
         let i, cs = Term.Var.reify (reify env) x in
         Var (i, cs)
@@ -94,6 +95,7 @@ module Reifier = struct
       ~fval:(fun _ _ -> Obj.magic t)
       ~fcon:(fun _ _ _ -> Obj.magic t)
       ~fvar:(fun _ -> raise Not_a_value)
+      ~fmu:(fun _ -> raise Not_a_value)
 
   let prj onvar env t =
     match reify env t with

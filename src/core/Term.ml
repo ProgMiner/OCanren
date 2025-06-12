@@ -110,6 +110,12 @@ module VarMap =
       iter (fun k v -> f !i k v; incr i) m
   end
 
+module Mu =
+  struct
+
+    type t
+  end
+
 type value = Obj.t
 
 let repr = Obj.repr
@@ -128,7 +134,7 @@ let is_val t = is_int t || is_str t || is_dbl t
 let check_val t =
   if not @@ is_val t then invalid_arg @@ sprintf "OCanren fatal: invalid value tag (%d)" t
 
-let[@inline] unterm ~fvar ~fval ~fcon x =
+let[@inline] unterm ~fvar ~fval ~fcon ~fmu x =
   let tx = Obj.tag x in
   if is_box tx then
     let sx = Obj.size x in
@@ -166,12 +172,14 @@ let rec pp ppf = let open Format in unterm
     inner 0 ;
     fprintf ppf ">"
   end
+  ~fmu:(fun _ -> failwith "unreachable")
 
 let show x = Format.asprintf "%a" pp x
 
 let equal =
-  let[@inline] unterm ?(fvar=fun _ -> false) ?(fval=fun _ _ -> false) ?(fcon=fun _ _ _ -> false) x
-    = unterm x ~fvar ~fval ~fcon
+  let[@inline] unterm ?(fvar=fun _ -> false) ?(fval=fun _ _ -> false)
+                      ?(fcon=fun _ _ _ -> false) ?(fmu=fun _ -> false) x
+    = unterm x ~fvar ~fval ~fcon ~fmu
   in
   let rec hlp x y = unterm x
     ~fvar:begin fun x -> unterm y
@@ -203,11 +211,13 @@ let compare x y = unterm x
     end
     ~fval:(fun _ _ -> -1)
     ~fcon:(fun _ _ _ -> -1)
+    ~fmu:(fun _ -> -1)
   end
   ~fval:begin fun _ x -> unterm y
     ~fvar:(fun _ -> 1)
     ~fval:(fun _ y -> compare' x y)
     ~fcon:(fun _ _ _ -> -1)
+    ~fmu:(fun _ -> -1)
   end
   ~fcon:begin fun tx sx xi -> unterm y
     ~fvar:(fun _ -> 1)
@@ -224,7 +234,9 @@ let compare x y = unterm x
         in
         inner 0
     end
+    ~fmu:(fun _ -> -1)
   end
+  ~fmu:(fun _ -> failwith "unreachable")
 
 let rec hash x = unterm x
   ~fval:(fun _ -> Hashtbl.hash)
@@ -240,67 +252,81 @@ let rec hash x = unterm x
 
     Hashtbl.hash (tx, inner 0)
   end
+  ~fmu:(fun _ -> failwith "unreachable")
 
-let map ~fvar ~fval =
-  let rec hlp x = unterm x ~fvar ~fval
-    ~fcon:(fun tx sx xi -> make_con tx sx @@ fun i -> hlp @@ xi i)
-  in
-  hlp
+module Flat =
+  struct
 
-let iter ~fvar ~fval =
-  let rec hlp x = unterm x ~fvar ~fval
-    ~fcon:begin fun _ sx xi ->
-      for i = 0 to sx - 1 do
-        hlp @@ xi i
-      done
-    end
-  in
-  hlp
-
-let fold ~fvar ~fval ~init =
-  let rec hlp acc x = unterm x ~fvar:(fvar acc) ~fval:(fval acc)
-    ~fcon:begin fun _ sx xi ->
-      let rec inner i acc =
-        if i < sx then inner (i + 1) @@ hlp acc @@ xi i
-        else acc
-      in
-      inner 0 acc
-    end
-  in
-  hlp init
-
-exception Different_shape of int * int
-
-type label = L | R
-
-let fold2 ~fvar ~fval ~fk ~init =
-  let rec hlp acc x y = unterm x
-    ~fvar:begin fun x -> unterm y
-      ~fvar:(fun y -> fvar acc x y)
-      ~fval:(fun _ _ -> fk acc L x y)
-      ~fcon:(fun _ _ _ -> fk acc L x y)
-    end
-    ~fval:begin fun tx x -> unterm y
-      ~fvar:(fun y -> fk acc R y x)
-      ~fval:begin fun ty y ->
-        if tx = ty then fval acc tx x y
-        else raise @@ Different_shape (tx, ty)
+    let[@inline] unterm ~fvar ~fval ~fcon x = unterm x ~fvar ~fval ~fcon
+      ~fmu:begin fun x -> invalid_arg
+        @@ Format.asprintf "OCanren fatal: mu-binders aren't allowed here (%a)" pp (repr x)
       end
-      ~fcon:(fun ty _ _ -> raise @@ Different_shape (tx, ty))
-    end
-    ~fcon:begin fun tx sx xi -> unterm y
-      ~fvar:(fun y -> fk acc R y x)
-      ~fval:(fun ty _ -> raise @@ Different_shape (tx, ty))
-      ~fcon:begin fun ty sy yi ->
-        if tx = ty && sx = sy then
+
+    let map ~fvar ~fval =
+      let rec hlp x = unterm x ~fvar ~fval
+        ~fcon:(fun tx sx xi -> make_con tx sx @@ fun i -> hlp @@ xi i)
+      in
+      hlp
+
+    let iter ~fvar ~fval =
+      let rec hlp x = unterm x ~fvar ~fval
+        ~fcon:begin fun _ sx xi ->
+          for i = 0 to sx - 1 do
+            hlp @@ xi i
+          done
+        end
+      in
+      hlp
+
+    let fold ~fvar ~fval ~init =
+      let rec hlp acc x = unterm x ~fvar:(fvar acc) ~fval:(fval acc)
+        ~fcon:begin fun _ sx xi ->
           let rec inner i acc =
-            if i < sx then inner (i + 1) @@ hlp acc (xi i) (yi i)
+            if i < sx then inner (i + 1) @@ hlp acc @@ xi i
             else acc
           in
           inner 0 acc
-        else raise @@ Different_shape (tx, ty)
-      end
-    end
-  in
-  hlp init
+        end
+      in
+      hlp init
 
+    exception Different_shape of int * int
+
+    type label = L | R
+
+    let fold2 ~fvar ~fval ~fk ~init =
+      let rec hlp acc x y = unterm x
+        ~fvar:begin fun x -> unterm y
+          ~fvar:(fun y -> fvar acc x y)
+          ~fval:(fun _ _ -> fk acc L x y)
+          ~fcon:(fun _ _ _ -> fk acc L x y)
+        end
+        ~fval:begin fun tx x -> unterm y
+          ~fvar:(fun y -> fk acc R y x)
+          ~fval:begin fun ty y ->
+            if tx = ty then fval acc tx x y
+            else raise @@ Different_shape (tx, ty)
+          end
+          ~fcon:(fun ty _ _ -> raise @@ Different_shape (tx, ty))
+        end
+        ~fcon:begin fun tx sx xi -> unterm y
+          ~fvar:(fun y -> fk acc R y x)
+          ~fval:(fun ty _ -> raise @@ Different_shape (tx, ty))
+          ~fcon:begin fun ty sy yi ->
+            if tx = ty && sx = sy then
+              let rec inner i acc =
+                if i < sx then inner (i + 1) @@ hlp acc (xi i) (yi i)
+                else acc
+              in
+              inner 0 acc
+            else raise @@ Different_shape (tx, ty)
+          end
+        end
+      in
+      hlp init
+  end
+
+(* TODO *)
+let unsafe_map = Flat.map
+let iter = Flat.iter
+let fold = Flat.fold
