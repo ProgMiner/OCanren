@@ -50,23 +50,6 @@ module Answer =
     let extract t v =
       try S.elements @@ Term.VarMap.find v t
       with Not_found -> []
-
-    let subsumed env t =
-      (* we should check that for each binding from [t'] there is
-       * a binding in [t] that subsumes it;
-       * Examples:
-       *    (x =/= _.0) <= (x =/= 1 /\ x =/= 2), but
-       *    (x =/= _.0) and (x =/= 1 /\ y =/= 2) are not ordered
-       *)
-      Term.VarMap.for_all @@ fun var terms' ->
-        try
-          let terms = Term.VarMap.find var t in
-          S.for_all (fun term' ->
-            S.exists (fun term ->
-              Subst.Answer.subsumed env term term'
-            ) terms
-          ) terms'
-        with Not_found -> false
   end
 
 exception Disequality_violated
@@ -456,4 +439,4 @@ let recheck env subst cstore bs =
 let project env subst cstore fv =
   Conjunct.(split @@ project env subst (combine env subst cstore) fv)
 
-let reify env subst cstore = Conjunct.reify env subst (combine env subst cstore)
+let reify env subst cstore = Conjunct.reify env subst @@ combine env subst cstore

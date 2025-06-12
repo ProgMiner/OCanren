@@ -141,7 +141,7 @@ let extend ~scope env subst var term =
 
 exception Unification_failed
 
-let unify ?(subsume=false) ?(scope=Term.Var.non_local_scope) env subst x y =
+let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   (* The idea is to do the unification and collect the unification prefix during the process *)
   let extend var term (prefix, subst) =
     let subst = extend ~scope env subst var term in
@@ -163,9 +163,7 @@ let unify ?(subsume=false) ?(scope=Term.Var.non_local_scope) env subst x y =
       else raise Unification_failed
     end
     ~fk:begin fun ((_, subst) as acc) l v y ->
-      if subsume && l = Term.R
-      then raise Unification_failed
-      else match walk env subst v with
+      match walk env subst v with
       | Var v   -> extend v y acc
       | Value x -> helper x y acc
     end
@@ -196,11 +194,6 @@ module Answer =
   struct
 
     type t = Term.t
-
-    let subsumed env x y =
-      match unify ~subsume:true env empty y x with
-      | Some _ -> true
-      | None   -> false
   end
 
 let reify = apply
