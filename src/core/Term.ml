@@ -78,7 +78,7 @@ module Var =
         (Obj.is_block @@ Obj.repr anchor) && is_valid_anchor anchor
       else false
 
-    let reify r { index ; constraints } = index, List.map (fun x -> r @@ Obj.obj x) constraints
+    let reify r { index ; constraints } = index, List.map r constraints
 
     let equal x y =
       (x.index = y.index) && (x.env = y.env)

@@ -71,7 +71,7 @@ let from_logic = function
 | Var _ -> raise Not_a_value
 | Value x -> x
 
-type 'a ilogic
+type 'a ilogic = Term.t
 
 external inj : 'a -> 'a ilogic = "%identity"
 

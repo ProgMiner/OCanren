@@ -693,7 +693,7 @@ module Table :
             else
               (* consume one answer term from cache and `lift` it to the current environment *)
               let answ, tail = (Answer.lift env @@ List.hd curr), List.tl curr in
-              match State.unify (Obj.repr args) (Answer.unctr_term answ) st with
+              match State.unify (Term.repr args) (Answer.unctr_term answ) st with
                 | None -> helper start tail seen
                 | Some ({subst=subst'; ctrs=ctrs'} as st') ->
                   begin
