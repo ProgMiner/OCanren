@@ -358,7 +358,7 @@ module Conjunct :
         | None      -> acc
       ) t M.empty
       in
-      let fv = Subst.freevars env subst x in
+      let fv = Subst.freevars env subst @@ Term.repr x in
       let t = project env subst t fv in
       (* here we convert disequality in CNF form into DNF form;
        * we maintain a list of answers, that is a mapping [var -> term list] ---

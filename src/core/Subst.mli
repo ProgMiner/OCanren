@@ -44,11 +44,12 @@ val split : t -> Binding.t list
 
 val pp : Format.formatter -> t -> unit
 
-(* [unify ~scope env subst x y] performs unification of two terms [x] and [y] in [subst].
+(* [unify ~scope env subst x y] performs unification of two flat terms [x] and [y] in [subst].
  *   Unification is a process of finding substituion [s] s.t. [s(x) = s(y)].
  *   Returns [None] if two terms are not unifiable.
  *   Otherwise it returns a pair of diff and new substituion.
  *   Diff is a list of pairs (var, term) that were added to the original substituion.
+ *   Current algorithm doesn't forbid recursive terms.
  *)
 val unify : ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
 
@@ -61,13 +62,14 @@ val merge_disjoint : Env.t -> t -> t -> t
  *)
 val subsumed : Env.t -> t -> t -> bool
 
-(* [apply env subst x] - applies [subst] to term [x],
- *   i.e. replaces every variable to relevant binding in [subst];
+(* [apply env subst x] applies [subst] to flat term [x] (without mu-binders),
+ *   i.e. replaces every variable to image in [subst];
+ *   resulting in term with possible mu-binders inside
  *)
-val apply : Env.t -> t -> 'a -> 'a
+val apply : Env.t -> t -> Term.t -> Term.t
 
 (* [freevars env subst x] - returns all free-variables of term [x] *)
-val freevars : Env.t -> t -> 'a -> Term.VarSet.t
+val freevars : Env.t -> t -> Term.t -> Term.VarSet.t
 
 module Answer :
   sig
