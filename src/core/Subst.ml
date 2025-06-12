@@ -90,32 +90,32 @@ let walk env subst =
   and walkt t =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
 
-    Env.unterm env t ~fvar:walkv
+    Env.unterm_flat env t ~fvar:walkv
       ~fval:(fun _ _ -> Value t)
       ~fcon:(fun _ _ _ -> Value t)
   in
 
   walkv
 
-(* same as [Term.map] but performs [walk] on the road *)
+(* same as [Term.Flat.map] but performs [walk] on the road *)
 let map ~fvar ~fval env subst x =
   let rec deepfvar v =
     Env.check_exn env v;
     match walk env subst v with
     | Var v   -> fvar v
-    | Value x -> Term.map x ~fval ~fvar:deepfvar
+    | Value x -> Term.Flat.map x ~fval ~fvar:deepfvar
   in
-  Term.map x ~fval ~fvar:deepfvar
+  Term.Flat.map x ~fval ~fvar:deepfvar
 
-(* same as [Term.iter] but performs [walk] on the road *)
+(* same as [Term.Flat.iter] but performs [walk] on the road *)
 let iter ~fvar ~fval env subst x =
   let rec deepfvar v =
     Env.check_exn env v;
     match walk env subst v with
     | Var v   -> fvar v
-    | Value x -> Term.iter x ~fval ~fvar:deepfvar
+    | Value x -> Term.Flat.iter x ~fval ~fvar:deepfvar
   in
-  Term.iter x ~fval ~fvar:deepfvar
+  Term.Flat.iter x ~fval ~fvar:deepfvar
 
 exception Occurs_check
 
@@ -148,7 +148,7 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
     Binding.{ var ; term }::prefix, subst
   in
 
-  let rec helper x y acc = Term.fold2 x y ~init:acc
+  let rec helper x y acc = Term.Flat.fold2 x y ~init:acc
     ~fvar:begin fun ((_, subst) as acc) x y ->
       match walk env subst x, walk env subst y with
       | Var x, Var y ->
@@ -172,7 +172,7 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   try
     let x, y = Term.(repr x, repr y) in
     Some (helper x y ([], subst))
-  with Term.Different_shape _ | Unification_failed | Occurs_check -> None
+  with Term.Flat.Different_shape _ | Unification_failed | Occurs_check -> None
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
