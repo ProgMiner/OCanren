@@ -59,22 +59,20 @@ let make x y z = Logic.inj (x, y, z)
 
 let triple = make
 
-let reify : 'a 'b 'c 'd . ('a, 'b) Reifier.t -> ('c, 'd) Reifier.t -> ('e, 'f) Reifier.t ->
-  (('a, 'c, 'e) groundi, ('b, 'd, 'f) logic) Reifier.t =
-  fun ra rb rc ->
-    let ( >>= ) = Env.Monad.bind in
-    Reifier.fix (fun self ->
-      Reifier.compose Reifier.reify
-       ( ra >>= fun fa ->
-         rb >>= fun fb ->
-         rc >>= fun fc ->
-          let rec foo = function
-              | Var (v, xs) ->
-                Var (v, Stdlib.List.map foo xs)
-              | Value x -> Value (GT.gmap t fa fb fc x)
-          in
-          Env.Monad.return foo
-        ))
+let reify : 'a 'b 'c 'd . ('a, 'b) Reifier.t -> ('c, 'd) Reifier.t -> ('e, 'f) Reifier.t
+         -> (('a, 'c, 'e) groundi, ('b, 'd, 'f) logic) Reifier.t = fun ra rb rc ->
+  let open Env.Monad.Syntax in
+  let* fa = ra in
+  let* fb = rb in
+  let* fc = rc in
+  Reifier.compose Reifier.reify begin
+    let rec foo = function
+    | Var (v, xs) -> Var (v, Stdlib.List.map foo xs)
+    | Value x -> Value (GT.gmap t fa fb fc x)
+    | Mu (v, x) -> Mu (v, foo x)
+    in
+    Env.Monad.return foo
+  end
 
 let prj_exn : ('a, 'b) Reifier.t -> ('c, 'd) Reifier.t -> ('e, 'f) Reifier.t ->
   (('a, 'c, 'e) groundi, ('b, 'd, 'f) ground) Reifier.t =
