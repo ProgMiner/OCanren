@@ -73,6 +73,7 @@ module Answer :
     (* [ctr_term a] returns a term with constrained variables *)
     val ctr_term : t -> Term.t
 
+    (*
     (* [unctr_term a] returns a term with unconstrained variables *)
     val unctr_term : t -> Term.t
 
@@ -81,6 +82,7 @@ module Answer :
 
     (* [lift env a] lifts the answer into different environment, replacing all variables consistently *)
     val lift : Env.t -> t -> t
+    *)
 
     (* [equal t t'] syntactic equivalence (not an alpha-equivalence) *)
     val equal : t -> t -> bool
@@ -97,6 +99,7 @@ module Answer :
 
     let ctr_term (_, t) = t
 
+    (*
     let unctr_term (_, t) = Term.map t ~fval:(fun _ -> Term.repr)
       ~fvar:(fun v -> Term.repr { v with Term.Var.constraints = [] })
 
@@ -127,6 +130,7 @@ module Answer :
         end
       in
       env', helper t
+    *)
 
     let check_envs_exn env env' =
       if Env.equal env env' then () else
@@ -626,6 +630,7 @@ let run n g h =
     uncurr h @@ reifier (Obj.magic @@ Answer.ctr_term answ) (Answer.env answ)
   )
 
+(*
 (** ************************************************************************* *)
 (** Tabling primitives                                                        *)
 
@@ -782,6 +787,7 @@ module Tabling =
       g := currier g_tabled;
       !g
   end
+*)
 
 
 let reify_in_empty reifier x =
