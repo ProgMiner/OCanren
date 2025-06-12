@@ -26,6 +26,7 @@ type t = Obj.t
 
 module Var =
   struct
+
     type term   = t
     type env    = int
     type scope  = int
@@ -103,6 +104,7 @@ module VarTbl = Hashtbl.Make(Var)
 
 module VarMap =
   struct
+
     include Map.Make(Var)
 
     let iteri f m =
@@ -113,7 +115,32 @@ module VarMap =
 module Mu =
   struct
 
-    type t
+    type anchor = int ref
+    type term = t
+
+    let global_anchor = ref (-8)
+
+    type t = {
+      anchor: anchor;
+      var: Var.t;
+      body: term;
+    }
+
+    let make var body = { anchor = global_anchor ; var ; body }
+
+    let dummy = make Var.dummy (Obj.repr 0)
+
+    let mu_tag, mu_size =
+      let dummy = Obj.repr dummy in
+      Obj.tag dummy, Obj.size dummy
+
+    let is_valid_anchor anchor = anchor == global_anchor
+
+    let has_mu_structure tx sx x =
+      if tx = mu_tag && sx = mu_size then
+        let anchor = (Obj.obj x).anchor in
+        (Obj.is_block @@ Obj.repr anchor) && is_valid_anchor anchor
+      else false
   end
 
 type value = Obj.t
@@ -139,6 +166,7 @@ let[@inline] unterm ~fvar ~fval ~fcon ~fmu x =
   if is_box tx then
     let sx = Obj.size x in
     if Var.has_var_structure tx sx x then fvar (obj x)
+    else if Mu.has_mu_structure tx sx x then fmu (obj x)
     else fcon tx sx (Obj.field x)
   else begin
     check_val tx ;
@@ -172,7 +200,7 @@ let rec pp ppf = let open Format in unterm
     inner 0 ;
     fprintf ppf ">"
   end
-  ~fmu:(fun _ -> failwith "unreachable")
+  ~fmu:(fun x -> fprintf ppf "mu %a <%a>" Var.describe x.Mu.var pp x.Mu.body)
 
 let show x = Format.asprintf "%a" pp x
 
@@ -196,6 +224,9 @@ let equal =
           inner 0
         else false
       end
+    end
+    ~fmu:begin fun x -> unterm y
+      ~fmu:(fun y -> Var.equal x.Mu.var y.Mu.var && hlp x.Mu.body y.Mu.body)
     end
   in
   hlp
@@ -236,7 +267,15 @@ let compare x y = unterm x
     end
     ~fmu:(fun _ -> -1)
   end
-  ~fmu:(fun _ -> failwith "unreachable")
+  ~fmu:begin fun x -> unterm y
+    ~fvar:(fun _ -> 1)
+    ~fval:(fun _ _ -> 1)
+    ~fcon:(fun _ _ _ -> 1)
+    ~fmu:begin fun y ->
+      let res = Var.compare x.Mu.var y.Mu.var in
+      if res <> 0 then res else compare x.Mu.body y.Mu.body
+    end
+  end
 
 let rec hash x = unterm x
   ~fval:(fun _ -> Hashtbl.hash)
@@ -252,7 +291,53 @@ let rec hash x = unterm x
 
     Hashtbl.hash (tx, inner 0)
   end
-  ~fmu:(fun _ -> failwith "unreachable")
+  ~fmu:(fun x -> Hashtbl.hash (Var.hash x.Mu.var, hash x.Mu.body))
+
+let map_head f = unterm ~fvar:repr ~fmu:repr ~fval:(fun _ -> repr)
+  ~fcon:(fun tx sx xi -> make_con tx sx @@ fun i -> f @@ xi i)
+
+let unsafe_map ~fvar ~fval =
+  let rec hlp bvs =
+    let rec hlp_bvs x = unterm x ~fval
+      ~fvar:(fun v -> if VarSet.mem v bvs then x else fvar v)
+      ~fcon:(fun tx sx xi -> make_con tx sx (fun i -> hlp_bvs @@ xi i))
+      ~fmu:(fun x -> repr @@ Mu.make x.Mu.var @@ hlp (VarSet.add x.Mu.var bvs) x.Mu.body)
+    in
+    hlp_bvs
+  in
+  hlp VarSet.empty
+
+let iter ~fvar ~fval =
+  let rec hlp bvs =
+    let rec hlp_bvs x = unterm x ~fval
+      ~fvar:(fun x -> if not @@ VarSet.mem x bvs then fvar x)
+      ~fcon:begin fun _ sx xi ->
+        for i = 0 to sx - 1 do
+          hlp_bvs @@ xi i
+        done
+      end
+      ~fmu:(fun x -> hlp (VarSet.add x.Mu.var bvs) x.Mu.body)
+    in
+    hlp_bvs
+  in
+  hlp VarSet.empty
+
+let fold ~fvar ~fval ~init =
+  let rec hlp bvs =
+    let rec hlp_bvs acc x = unterm x ~fval:(fval acc)
+      ~fvar:(fun x -> if VarSet.mem x bvs then acc else fvar acc x)
+      ~fcon:begin fun _ sx xi ->
+        let rec inner i acc =
+          if i < sx then inner (i + 1) @@ hlp_bvs acc @@ xi i
+          else acc
+        in
+        inner 0 acc
+      end
+      ~fmu:(fun x -> hlp (VarSet.add x.Mu.var bvs) acc x.Mu.body)
+    in
+    hlp_bvs
+  in
+  hlp VarSet.empty init
 
 module Flat =
   struct
@@ -325,8 +410,3 @@ module Flat =
       in
       hlp init
   end
-
-(* TODO *)
-let unsafe_map = Flat.map
-let iter = Flat.iter
-let fold = Flat.fold

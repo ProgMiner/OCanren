@@ -87,7 +87,7 @@ module Reifier = struct
     fun env t -> Term.unterm t
       ~fval:(fun _ _ -> Value (Obj.magic t))
       ~fcon:(fun _ _ _ -> Value (Obj.magic t))
-      ~fmu:(fun x -> failwith "unreachable")
+      ~fmu:(fun x -> Mu (x.Term.Mu.var.Term.Var.index, reify env x.Term.Mu.body))
       ~fvar:begin fun x ->
         let i, cs = Term.Var.reify (reify env) x in
         Var (i, cs)
