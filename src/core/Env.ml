@@ -40,7 +40,8 @@ let check_exn env v =
   if check env v then () else failwith "OCanren fatal (Env.check): wrong environment"
 
 let[@inline] unterm env ~fvar ~fval ~fcon ~fmu x = Term.unterm (Term.repr x) ~fval ~fcon
-  ~fvar:(fun x -> check_exn env x ; fvar x) ~fmu
+  ~fvar:(fun x -> check_exn env x ; fvar x)
+  ~fmu:(fun x -> check_exn env x.Term.Mu.var ; fmu x)
 
 let[@inline] unterm_flat env ~fvar ~fval ~fcon x = Term.Flat.unterm (Term.repr x) ~fval ~fcon
   ~fvar:(fun x -> check_exn env x ; fvar x)

@@ -25,6 +25,7 @@ type t
 (* [Var] logic variables and operations on them *)
 module Var :
   sig
+
     type term = t
     type env = int
     type scope
@@ -67,10 +68,20 @@ module VarMap :
     val iteri: (int -> key -> 'a -> unit) -> 'a t -> unit
   end
 
+(* [Mu] recursive term binders *)
 module Mu :
   sig
 
-    type t
+    type term = t
+    type anchor
+
+    type t = {
+      anchor: anchor;
+      var: Var.t;
+      body: term;
+    }
+
+    val make : Var.t -> term -> t
   end
 
 type value
@@ -95,6 +106,11 @@ val pp : Format.formatter -> t -> unit
 val equal   : t -> t -> bool
 val compare : t -> t -> int
 val hash    : t -> int
+
+(* [map_head f x] maps top-level constructor arguments of OCaml's value extended with logic variables;
+ *   leaves other forms of term unchanged
+ *)
+val map_head : (t -> t) -> t -> t
 
 (* [unsafe_map ~fvar ~fval x] maps OCaml's value extended with logic variables and mu-binders;
  *   handles primitive types with the help of [fval] and logic variables with the help of [fvar];
