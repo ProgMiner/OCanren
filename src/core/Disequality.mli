@@ -19,7 +19,7 @@
 type t
 
 (* [empty] empty disequality constraint store *)
-val empty  : t
+val empty : t
 
 (* [add env subst diseq x y] adds constraint [x =/= y] into disequality constraint store *)
 val add : Env.t -> Subst.t -> t -> 'a -> 'a -> t option
@@ -41,15 +41,16 @@ val merge_disjoint : Env.t -> Subst.t -> t -> t -> t
 
 module Answer :
   sig
+
     (* [Answer.t] result of reification of disequality constraints *)
     type t
 
     (* [extract a v] returns list of `forbidden` terms for variable [v] *)
     val extract : t -> Term.Var.t -> Term.t list
-
-    val subsumed : Env.t -> t -> t -> bool
   end
 
 val reify : Env.t -> Subst.t -> t -> 'a -> Answer.t list
 
-val pp: Format.formatter -> t -> unit
+val reify_t : Env.t -> Subst.t -> t -> t
+
+val pp : Format.formatter -> t -> unit

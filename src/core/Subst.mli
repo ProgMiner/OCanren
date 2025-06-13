@@ -19,74 +19,62 @@
 
 module Binding :
   sig
+
     type t =
       { var   : Term.Var.t
       ; term  : Term.t
       }
 
-    val is_relevant : Env.t -> Term.VarSet.t -> t -> bool
-
     val equal : t -> t -> bool
     val compare : t -> t -> int
     val hash : t -> int
-    val pp: Format.formatter -> t -> unit
+
+    val pp : Format.formatter -> t -> unit
   end
 
-val varmap_of_bindings: Binding.t list -> Term.t Term.VarMap.t
+val varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t
 
 type t
 
-val pp: Format.formatter -> t -> unit
-
 val empty : t
 
-val of_list : Binding.t list -> t
-val of_map  : Term.t Term.VarMap.t -> t
+val of_map : Term.t Term.VarMap.t -> t
 
 val split : t -> Binding.t list
 
-(* [apply env subst x] - applies [subst] to term [x],
- *   i.e. replaces every variable to relevant binding in [subst];
- *)
-val apply : Env.t -> t -> 'a -> 'a
+val pp : Format.formatter -> t -> unit
 
-(* [is_bound x subst] - checks whether [x] is bound by [subst] *)
-val is_bound : Term.Var.t -> t -> bool
-
-(* [freevars env subst x] - returns all free-variables of term [x] *)
-val freevars : Env.t -> t -> 'a -> Term.VarSet.t
-
-(* [unify ~subsume ~scope env subst x y] performs unification of two terms [x] and [y] in [subst].
+(* [unify ~scope env subst x y] performs unification of two flat terms [x] and [y] in [subst].
  *   Unification is a process of finding substituion [s] s.t. [s(x) = s(y)].
  *   Returns [None] if two terms are not unifiable.
  *   Otherwise it returns a pair of diff and new substituion.
  *   Diff is a list of pairs (var, term) that were added to the original substituion.
- *
- *   If [subsume] argument is passed and [true] then substituion binds variables only from left term,
- *   (i.e. it returns [s] s.t. [s(x) = y]).
- *   This can be used to perform subsumption check:
- *   [y] is subsumed by [x] (i.e. [x] is more general than [x]) if such a unification succeeds.
+ *   Current algorithm doesn't forbid recursive terms.
  *)
-val unify : ?subsume:bool -> ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
+val unify : ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
 
-val unify_map: Env.t -> t -> Term.t Term.VarMap.t -> (Binding.t list * t) option
+val unify_map : Env.t -> t -> Term.t Term.VarMap.t -> (Binding.t list * t) option
 
 val merge_disjoint : Env.t -> t -> t -> t
-
-(* [merge env s1 s2] merges two substituions *)
-val merge : Env.t -> t -> t -> t option
 
 (* [subsumed env s1 s2] checks that [s1] is subsumed by [s2] (i.e. [s2] is more general than [s1]).
  *   Subsumption relation forms a partial order on the set of substitutions.
  *)
 val subsumed : Env.t -> t -> t -> bool
 
+(* [apply env subst x] applies [subst] to flat term [x] (without mu-binders),
+ *   i.e. replaces every variable to image in [subst];
+ *   resulting in term with possible mu-binders inside
+ *)
+val apply : Env.t -> t -> Term.t -> Term.t
+
+(* [freevars env subst x] - returns all free-variables of term [x] *)
+val freevars : Env.t -> t -> Term.t -> Term.VarSet.t
+
 module Answer :
   sig
-    type t = Term.t
 
-    (* [subsumed env x y] checks that [x] is subsumed by [y] (i.e. [y] is more general than [x]) *)
-    val subsumed : Env.t -> t -> t -> bool
+    type t = Term.t
   end
 
 (* see [apply] *)
