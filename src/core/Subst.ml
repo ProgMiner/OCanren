@@ -57,21 +57,26 @@ let varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t =
   )
   Term.VarMap.empty
 
-type t = Term.t Term.VarMap.t
+(* mutability is intended to use only for path compression *)
+type t = Term.t Term.VarMap.t ref
 
-let empty = Term.VarMap.empty
+let empty = ref Term.VarMap.empty
 
-let of_map m = m
+let of_map m = ref m
 
-let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) s []
+let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) !s []
 
 let pp ppf s =
   let open Format in
   fprintf ppf "{subst| " ;
-  Term.VarMap.iter (fun x t -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) Term.pp t) s ;
+  Term.VarMap.iter (fun x t -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) Term.pp t) !s ;
   fprintf ppf "|subst}"
 
 type lterm = Var of Term.Var.t | Value of Term.t
+
+let lterm_to_term = function
+| Var   v -> Term.repr v
+| Value t -> t
 
 let walk env subst =
 
@@ -83,7 +88,10 @@ let walk env subst =
     match v.Term.Var.subst with
     | Some term -> walkt term
     | None ->
-        try walkt (Term.VarMap.find v subst)
+        try
+          let res = walkt @@ Term.VarMap.find v !subst in
+          subst := Term.VarMap.add v (lterm_to_term res) !subst ;
+          res
         with Not_found -> Var v
 
   (* walk term *)
@@ -137,7 +145,7 @@ let extend ~scope env subst var term =
     var.subst <- Some term ;
     subst
   end else
-    Term.VarMap.add var term subst
+    ref @@ Term.VarMap.add var term !subst
 
 exception Unification_failed
 
@@ -180,13 +188,16 @@ let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
   unify env subst vars terms
 
-let merge_disjoint env = Term.VarMap.union @@ fun _ _ ->
-  invalid_arg "OCanren fatal (Subst.merge_disjoint): substitutions intersect"
+let merge_disjoint s1 s2 =
+  let hlp _ _ = invalid_arg "OCanren fatal (Subst.merge_disjoint): substitutions intersect" in
+  ref @@ Term.VarMap.union hlp !s1 !s2
 
-let subsumed env subst = Term.VarMap.for_all @@ fun var term ->
-  match unify env subst var term with
+let subsumed env s1 s2 =
+  let hlp var term = match unify env s1 var term with
   | Some ([], _) -> true
   | _            -> false
+  in
+  Term.VarMap.for_all hlp !s2
 
 let apply env subst x = Obj.magic @@ map env subst (Term.repr x) ~fvar:Term.repr ~fval:Term.repr
 
