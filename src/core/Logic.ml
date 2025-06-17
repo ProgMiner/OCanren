@@ -118,9 +118,9 @@ module Reifier = struct
 
   let rec fix f = fun env eta -> f (fix f) env eta
 
-  let rework : 'a 'b. fv:('a Env.m -> 'b Env.m)
-            -> ('a logic Env.m -> 'b logic Env.m)
-            -> 'a logic Env.m -> 'b logic Env.m
+  let rec rework : 'a 'b. fv:('a Env.m -> 'b Env.m)
+                -> ('a logic Env.m -> 'b logic Env.m)
+                -> 'a logic Env.m -> 'b logic Env.m
   = fun ~fv fdeq x ->
       let open Env.Monad in
       let open Env.Monad.Syntax in
@@ -133,8 +133,8 @@ module Reifier = struct
         let+ inner = fv (return t) in
         Value inner
       | Mu (v, t) ->
-        (* TODO(ProgMiner): what is it? *)
-        failwith "OCanren fatal: not implemented"
+        let+ t = rework ~fv fdeq (return t) in
+        Mu (v, t)
 
   let rec zed f x = f (zed f) x
 end
