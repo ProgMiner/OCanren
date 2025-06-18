@@ -74,9 +74,10 @@ let is_term_head t =
     end
 
 (* every right hand side must be either a variable or a term head *)
-type t = Term.t Term.VarMap.t
+(* mutability is intended to use only for path compression *)
+type t = Term.t Term.VarMap.t ref
 
-let empty = Term.VarMap.empty
+let empty = ref Term.VarMap.empty
 
 let of_map m =
   (* TODO(ProgMiner): currently in Disequality we may have complex right hand sides but they
@@ -88,14 +89,14 @@ let of_map m =
     end
   in
   Term.VarMap.iter hlp m ;
-  m
+  ref m
 
-let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) s []
+let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) !s []
 
 let pp ppf s =
   let open Format in
   fprintf ppf "{subst| " ;
-  Term.VarMap.iter (fun x t -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) Term.pp t) s ;
+  Term.VarMap.iter (fun x t -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) Term.pp t) !s ;
   fprintf ppf "|subst}"
 
 (* returns representing variable and optional term head *)
@@ -107,10 +108,14 @@ let walk env subst =
     Env.check_exn env v ;
 
     match v.Term.Var.subst with
-    | Some term -> walkt v term
+    | Some term -> walkt v term (* path compression here is useless *)
     | None ->
-        try walkt v (Term.VarMap.find v subst)
-        with Not_found -> v, None
+      match Term.VarMap.find v !subst with
+      | exception Not_found -> v, None
+      | term ->
+        let u, _ as res = walkt v term in
+        if v != u then subst := Term.VarMap.add v (Term.repr u) !subst ;
+        res
 
   (* walk term *)
   and walkt v t =
@@ -139,7 +144,7 @@ let extend ~scope env subst var term =
     var.subst <- Some term ;
     subst
   end else
-    Term.VarMap.add var term subst
+    ref @@ Term.VarMap.add var term !subst
 
 (* [var] must be free in [subst], [term] mustn't be a variable or a mu-binder.
  * [inject] "x = f(t1, ..., tn)" replaces terms "ti" with fresh variables "yi",
@@ -234,13 +239,16 @@ let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
   unify env subst vars terms
 
-let merge_disjoint env = Term.VarMap.union @@ fun _ _ ->
-  invalid_arg "OCanren fatal (Subst.merge_disjoint): substitutions intersect"
+let merge_disjoint s1 s2 =
+  let hlp _ _ = invalid_arg "OCanren fatal (Subst.merge_disjoint): substitutions intersect" in
+  ref @@ Term.VarMap.union hlp !s1 !s2
 
-let subsumed env subst = Term.VarMap.for_all @@ fun var term ->
-  match unify env subst var term with
+let subsumed env s1 s2 =
+  let hlp var term = match unify env s1 var term with
   | Some ([], _) -> true
   | _            -> false
+  in
+  Term.VarMap.for_all hlp !s2
 
 let image env subst =
   let[@inline] unvar x =
