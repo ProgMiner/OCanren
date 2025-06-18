@@ -73,60 +73,101 @@ let is_term_head t =
       inner 0
     end
 
-(* every right hand side must be either a variable or a term head *)
+(* [term] must be a term head *)
+type root = {
+  depth: int;
+  term: Term.t option;
+}
+
+type node =
+| RootNode of root
+| LinkNode of Term.Var.t
+
+let pp_node ppf = let open Format in function
+| RootNode { depth ; term = Some term } -> fprintf ppf "Root{ depth = %d; term = %a }" depth Term.pp term
+| RootNode { depth } -> fprintf ppf "Root{ depth = %d }" depth
+| LinkNode var -> fprintf ppf "Link(%a)" Term.pp @@ Term.repr var
+
 (* mutability is intended to use only for path compression *)
-type t = Term.t Term.VarMap.t ref
+type t = node Term.VarMap.t ref
 
 let empty = ref Term.VarMap.empty
 
-let of_map m =
-  (* TODO(ProgMiner): currently in Disequality we may have complex right hand sides but they
-     mustn't occur in a substitution to prevent infinite looping. For now, I just forbid them but
-     in future we need to decide how to avoid them. See "regression/test023diseq.ml" to example *)
-  let hlp _ t =
-    if not (is_var t || is_term_head t) then begin
-      failwith "OCanren fatal: not a term head nor a variable in right hand side"
-    end
-  in
-  Term.VarMap.iter hlp m ;
-  ref m
+let split s =
+  let hlp var node xs =
+    let term = match node with
+    | RootNode { term } -> term
+    | LinkNode var' -> Some (Term.repr var')
+    in
 
-let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) !s []
+    match term with
+    | Some term -> Binding.{ var ; term }::xs
+    | None -> xs
+  in
+
+  Term.VarMap.fold hlp !s []
 
 let pp ppf s =
   let open Format in
   fprintf ppf "{subst| " ;
-  Term.VarMap.iter (fun x t -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) Term.pp t) !s ;
+  Term.VarMap.iter (fun x n -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) pp_node n) !s ;
   fprintf ppf "|subst}"
 
-(* returns representing variable and optional term head *)
-let walk env subst =
-
-  (* walk var *)
-  let rec walkv v =
+let find env subst =
+  let rec hlp v =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
     Env.check_exn env v ;
 
     match v.Term.Var.subst with
-    | Some term -> walkt v term (* path compression here is useless *)
+    | Some term' as term ->
+      Env.unterm_flat env term'
+        ~fvar:hlp (* path compression here is useless *)
+        (* omit depth heuristic here in favor of [Var.subst] optimization *)
+        ~fval:(fun _ _ -> v, { depth = 0 ; term })
+        ~fcon:(fun _ _ _ -> v, { depth = 0 ; term })
     | None ->
       match Term.VarMap.find v !subst with
-      | exception Not_found -> v, None
-      | term ->
-        let u, _ as res = walkt v term in
-        if v != u then subst := Term.VarMap.add v (Term.repr u) !subst ;
+      | exception Not_found -> v, { depth = 0 ; term = None }
+      | RootNode r -> v, r
+      | LinkNode u ->
+        let u', _ as res = hlp u in
+        if u != u' then subst := Term.VarMap.add v (LinkNode u') !subst ;
         res
-
-  (* walk term *)
-  and walkt v t =
-    let () = IFDEF STATS THEN walk_incr () ELSE () END in
-
-    Env.unterm_flat env t ~fvar:walkv
-      ~fval:(fun _ _ -> v, Some t)
-      ~fcon:(fun _ _ _ -> v, Some t)
   in
 
-  walkv
+  hlp
+
+let union env subst v u =
+  let v, r1 = find env subst v in
+  let u, r2 = find env subst u in
+
+  let subst = !subst in
+  if r1.depth > r2.depth then
+    let subst =
+      if r1.term = None && r2.term <> None
+      then Term.VarMap.add v (RootNode { r1 with term = r2.term }) subst
+      else subst
+    in
+    ref @@ Term.VarMap.add u (LinkNode v) subst
+  else if r1.depth < r2.depth then
+    let subst =
+      if r2.term = None && r1.term <> None
+      then Term.VarMap.add u (RootNode { r2 with term = r1.term }) subst
+      else subst
+    in
+    ref @@ Term.VarMap.add v (LinkNode u) subst
+  else
+    let term = match r1.term with Some _ as t -> t | None -> r2.term in
+    let r1 = { depth = r1.depth + 1 ; term } in
+    let subst = Term.VarMap.add v (RootNode r1) subst in
+    ref @@ Term.VarMap.add u (LinkNode v) subst
+
+(* [var] must be free in [subst], [term] must not be a logic variable *)
+let bind env subst var term =
+  let var, root = find env subst var in
+  let term = Some term in
+
+  ref @@ Term.VarMap.add var (RootNode { root with term }) !subst
 
 (* [var] must be free in [subst], [term] must be either a different variable or a term head *)
 let extend ~scope env subst var term =
@@ -143,8 +184,22 @@ let extend ~scope env subst var term =
   if scope = var.Term.Var.scope && scope <> Term.Var.non_local_scope then begin
     var.subst <- Some term ;
     subst
-  end else
-    ref @@ Term.VarMap.add var term !subst
+  end else Env.unterm_flat env term ~fvar:(union env subst var)
+    ~fval:(fun _ _ -> bind env subst var term)
+    ~fcon:(fun _ _ _ -> bind env subst var term)
+
+let of_map env m =
+  (* TODO(ProgMiner): currently in Disequality we may have complex right hand sides but they
+     mustn't occur in a substitution to prevent infinite looping. For now, I just forbid them but
+     in future we need to decide how to avoid them. See "regression/test023diseq.ml" to example *)
+  let hlp _ t =
+    if not (is_var t || is_term_head t) then begin
+      failwith "OCanren fatal: not a term head nor a variable in right hand side"
+    end
+  in
+  Term.VarMap.iter hlp m ;
+  let hlp var term subst = extend ~scope:Term.Var.non_local_scope env subst var term in
+  Term.VarMap.fold hlp m empty
 
 (* [var] must be free in [subst], [term] mustn't be a variable or a mu-binder.
  * [inject] "x = f(t1, ..., tn)" replaces terms "ti" with fresh variables "yi",
@@ -180,17 +235,17 @@ let inject ~scope env subst =
 type union_extend = Extend | Prefire
 
 let union env subst x y =
-  let x, t1 = walk env subst x in
-  let y, t2 = walk env subst y in
+  let x, r1 = find env subst x in
+  let y, r2 = find env subst y in
 
   if Term.Var.equal x y then None, None
   else
-    let x, y = match t2 with
+    let x, y = match r2.term with
     | Some _ -> y, x
     | None -> x, y
     in
 
-    let ext, ts = match t1, t2 with
+    let ext, ts = match r1.term, r2.term with
     | Some t1, Some t2 -> Prefire, Some (t1, t2)
     | _ -> Extend, None
     in
@@ -224,9 +279,10 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
       else raise Unification_failed
     end
     ~fk:begin fun ((prefix, subst) as acc) _ x y ->
-      match walk env subst x with
-      | x, None -> extend_prefix prefix x y, inject ~scope env subst x y
-      | _, Some x -> helper x y acc
+      let x, r = find env subst x in
+      match r.term with
+      | None -> extend_prefix prefix x y, inject ~scope env subst x y
+      | Some x -> helper x y acc
     end
   in
 
@@ -260,19 +316,21 @@ let image env subst =
   in
 
   let vis = Term.VarTbl.create 16 in
-  let rec hlp x = match walk env subst x with
-  | x, None -> Term.repr x
-  | x, Some t ->
-    if Term.VarTbl.mem vis x then begin
-      Term.VarTbl.replace vis x true ;
-      Term.repr x
-    end else begin
-      Term.VarTbl.add vis x false ;
-      let t = Term.map_head (fun x -> hlp (unvar x)) t in
-      let t = if Term.VarTbl.find vis x then Term.repr @@ Term.Mu.make x t else t in
-      Term.VarTbl.remove vis x ;
-      t
-    end
+  let rec hlp x =
+    let x, r = find env subst x in
+    match r.term with
+    | None -> Term.repr x
+    | Some t ->
+      if Term.VarTbl.mem vis x then begin
+        Term.VarTbl.replace vis x true ;
+        Term.repr x
+      end else begin
+        Term.VarTbl.add vis x false ;
+        let t = Term.map_head (fun x -> hlp (unvar x)) t in
+        let t = if Term.VarTbl.find vis x then Term.repr @@ Term.Mu.make x t else t in
+        Term.VarTbl.remove vis x ;
+        t
+      end
   in
 
   hlp
