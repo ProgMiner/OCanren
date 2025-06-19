@@ -58,21 +58,19 @@ let inj f g p = to_logic (GT.gmap(ground) f g p)
 
 let pair x y = Logic.inj (x, y)
 
-let reify : 'a 'b 'c 'd . ('a, 'b) Reifier.t -> ('c, 'd) Reifier.t ->
-  (('a,'c) groundi, ('b, 'd) logic) Reifier.t =
-  fun ra rb ->
-    let ( >>= ) = Env.Monad.bind in
-    Reifier.fix (fun self ->
-      Reifier.compose Reifier.reify
-       ( ra >>= fun fa ->
-         rb >>= fun fb ->
-          let rec foo = function
-              | Var (v, xs) ->
-                Var (v, Stdlib.List.map foo xs)
-              | Value x -> Value (GT.gmap t fa fb x)
-          in
-          Env.Monad.return foo
-        ))
+let reify : 'a 'b 'c 'd . ('a, 'b) Reifier.t -> ('c, 'd) Reifier.t
+         -> (('a,'c) groundi, ('b, 'd) logic) Reifier.t = fun ra rb ->
+  let open Env.Monad.Syntax in
+  let* fa = ra in
+  let* fb = rb in
+  Reifier.compose Reifier.reify begin
+    let rec foo = function
+    | Var (v, xs) -> Var (v, Stdlib.List.map foo xs)
+    | Value x -> Value (GT.gmap t fa fb x)
+    | Mu (v, x) -> Mu (v, foo x)
+    in
+    Env.Monad.return foo
+  end
 
 let prj_exn : 'a 'b 'c 'd . ('a, 'b) Reifier.t -> ('c, 'd) Reifier.t ->
   (('a, 'c) groundi, ('b, 'd) ground) Reifier.t =

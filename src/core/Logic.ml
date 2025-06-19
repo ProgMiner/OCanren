@@ -27,6 +27,7 @@ module List = Stdlib.List
 @type 'a logic =
 | Var   of GT.int * 'a logic GT.list
 | Value of 'a
+| Mu    of GT.int * 'a logic
 with show, gmap, html, eq, compare, foldl, foldr, fmt
 
 let logic = {logic with
@@ -43,6 +44,7 @@ let logic = {logic with
         | Value a -> fa ppf a
         | Var (n, []) -> Format.fprintf ppf "_.%d" n
         | Var (n, cs) -> Format.fprintf ppf "_.%d =/= [ %a ]" n (Format.pp_print_list self) cs
+        | Mu (n, a) -> Format.fprintf ppf "mu %d <%a>" n self a
         in
         self
 
@@ -56,6 +58,7 @@ let logic = {logic with
                | _  -> sprintf " %s" (GT.show(GT.list) (fun l -> "=/= " ^ fself () l) cs)
                in
                sprintf "_.%d%s" i c
+             method! c_Mu _ _ n x = sprintf "mu %d <%s>" n (fself () x)
              method! c_Value _ _ x = fa x
            end)
           ()
@@ -68,10 +71,10 @@ exception Not_a_value
 let to_logic x = Value x
 
 let from_logic = function
-| Var _ -> raise Not_a_value
+| Var _ | Mu _ -> raise Not_a_value
 | Value x -> x
 
-type 'a ilogic
+type 'a ilogic = Term.t
 
 external inj : 'a -> 'a ilogic = "%identity"
 
@@ -81,23 +84,29 @@ module Reifier = struct
   type ('a, 'b) t = ('a -> 'b) Env.Monad.t
 
   let rec reify : ('a ilogic, 'a logic) t =
-    fun env t ->
-      match Term.var t with
-      | None -> Value (Obj.magic t)
-      | Some v ->
-        let i, cs = Term.Var.reify (reify env) v in
+    fun env t -> Term.unterm t
+      ~fval:(fun _ _ -> Value (Obj.magic t))
+      ~fcon:(fun _ _ _ -> Value (Obj.magic t))
+      ~fmu:(fun x -> Mu (x.Term.Mu.var.Term.Var.index, reify env x.Term.Mu.body))
+      ~fvar:begin fun x ->
+        let i, cs = Term.Var.reify (reify env) x in
         Var (i, cs)
+      end
 
   let prj_exn : ('a ilogic, 'a) t =
-    fun env t ->
-      match Term.var t with
-      | None -> Obj.magic t
-      | Some v -> raise Not_a_value
+    fun env t -> Term.unterm t
+      ~fval:(fun _ _ -> Obj.magic t)
+      ~fcon:(fun _ _ _ -> Obj.magic t)
+      ~fvar:(fun _ -> raise Not_a_value)
+      ~fmu:(fun _ -> raise Not_a_value)
 
-  let prj onvar env t =
-    match reify env t with
-    | Var (v, _) -> onvar v
+  let prj onvar onmu env =
+    let rec hlp = function
     | Value x -> x
+    | Var (v, _) -> onvar v
+    | Mu (v, b) -> onmu v (hlp b)
+    in
+    fun t -> hlp @@ reify env t
 
   let apply r (env, a) = r env a
 
@@ -109,9 +118,9 @@ module Reifier = struct
 
   let rec fix f = fun env eta -> f (fix f) env eta
 
-  let rework : 'a 'b. fv:('a Env.m -> 'b Env.m)
-            -> ('a logic Env.m -> 'b logic Env.m)
-            -> 'a logic Env.m -> 'b logic Env.m
+  let rec rework : 'a 'b. fv:('a Env.m -> 'b Env.m)
+                -> ('a logic Env.m -> 'b logic Env.m)
+                -> 'a logic Env.m -> 'b logic Env.m
   = fun ~fv fdeq x ->
       let open Env.Monad in
       let open Env.Monad.Syntax in
@@ -123,6 +132,9 @@ module Reifier = struct
       | Value t ->
         let+ inner = fv (return t) in
         Value inner
+      | Mu (v, t) ->
+        let+ t = rework ~fv fdeq (return t) in
+        Mu (v, t)
 
   let rec zed f x = f (zed f) x
 end

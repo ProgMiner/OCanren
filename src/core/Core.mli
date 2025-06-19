@@ -224,6 +224,7 @@ val qrs : (_, _, _, _, _, _, _, _, _, _, _, _, _, _) NUMERAL_TYPS.three
 val qrst : (_, _, _, _, _, _, _, _, _, _, _, _, _, _,_,_,_,_) NUMERAL_TYPS.four
 
 
+(*
 (** Tabling primitives.
     Tabling allows to cache answers of the goal between different queries.
 
@@ -293,6 +294,7 @@ module Tabling :
        ('d -> 'a -> State.t Stream.t goal')) ->
       (('b -> 'c) -> 'd) -> 'b -> 'c
   end
+*)
 
 IFDEF STATS THEN
 val unification_counter : unit -> int

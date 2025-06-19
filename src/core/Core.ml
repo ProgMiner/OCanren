@@ -73,6 +73,7 @@ module Answer :
     (* [ctr_term a] returns a term with constrained variables *)
     val ctr_term : t -> Term.t
 
+    (*
     (* [unctr_term a] returns a term with unconstrained variables *)
     val unctr_term : t -> Term.t
 
@@ -81,6 +82,7 @@ module Answer :
 
     (* [lift env a] lifts the answer into different environment, replacing all variables consistently *)
     val lift : Env.t -> t -> t
+    *)
 
     (* [equal t t'] syntactic equivalence (not an alpha-equivalence) *)
     val equal : t -> t -> bool
@@ -97,11 +99,12 @@ module Answer :
 
     let ctr_term (_, t) = t
 
-    let unctr_term (_, t) = Term.map t ~fval:Term.repr
+    (*
+    let unctr_term (_, t) = Term.map t ~fval:(fun _ -> Term.repr)
       ~fvar:(fun v -> Term.repr { v with Term.Var.constraints = [] })
 
     let disequality (env, t) =
-      let rec helper acc x = Term.fold x ~init:acc ~fval:(fun acc _ -> acc)
+      let rec helper acc x = Term.fold x ~init:acc ~fval:(fun acc _ _ -> acc)
         ~fvar:begin fun acc ctr_var ->
           let var = { ctr_var with Term.Var.constraints = [] } in
           ListLabels.fold_left ctr_var.Term.Var.constraints ~init:acc
@@ -116,7 +119,7 @@ module Answer :
 
     let lift env' (env, t) =
       let vartbl = Term.VarTbl.create 31 in
-      let rec helper x = Term.map x ~fval:Term.repr
+      let rec helper x = Term.map x ~fval:(fun _ -> Term.repr)
         ~fvar:begin fun v -> Term.repr @@
           try Term.VarTbl.find vartbl v
           with Not_found ->
@@ -127,6 +130,7 @@ module Answer :
         end
       in
       env', helper t
+    *)
 
     let check_envs_exn env env' =
       if Env.equal env env' then () else
@@ -312,20 +316,22 @@ module State =
 
     (* always returns non-empty list *)
     let reify x { env ; subst ; ctrs } =
-      let answ = Subst.reify env subst x in
+      (* TODO(ProgMiner): we may lose constraints on some variables that occurs in constraints
+        but not in original answer *)
       match Disequality.reify env subst ctrs x with
       | [] -> (* [Answer.make env answ] *) assert false
       | diseqs -> ListLabels.map diseqs ~f:begin fun diseq ->
-        let rec helper forbidden t = Term.map t ~fval:Term.repr
-          ~fvar:begin fun v -> Term.repr @@
+        let rec helper : 'a . _ -> 'a -> _ = fun forbidden t ->
+          (* we must apply substitution here to reify constraint *)
+          let t = Subst.reify env subst t in
+          Term.unsafe_map t ~fval:(fun _ -> Term.repr) ~fvar:begin fun v -> Term.repr @@
             if Term.VarSet.mem v forbidden then v
             else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
-                |> List.filter begin fun dt ->
-                  match Env.var env dt with
-                  | Some u -> not @@ Term.VarSet.mem u forbidden
-                  | None   -> true
+                |> List.filter begin Env.unterm env
+                  ~fvar:(fun u -> not @@ Term.VarSet.mem u forbidden)
+                  ~fval:(fun _ _ -> true) ~fcon:(fun _ _ _ -> true) ~fmu:(fun _ -> true)
                 end
-                |> List.map (fun x -> helper (Term.VarSet.add v forbidden) x)
+                |> List.map (helper @@ Term.VarSet.add v forbidden)
                 (* TODO: represent [Var.constraints] as [Set];
                  * TODO: hide all manipulations on [Var.t] inside [Var] module;
                  *)
@@ -333,8 +339,10 @@ module State =
               }
           end
         in
-        Answer.make env @@ helper Term.VarSet.empty answ
+        Answer.make env @@ helper Term.VarSet.empty x
       end
+
+    let reify_constraints { env ; subst ; ctrs } = Disequality.reify_t env subst ctrs
   end
 
 let (!!!) = Obj.magic
@@ -627,6 +635,7 @@ let run n g h =
     uncurr h @@ reifier (Obj.magic @@ Answer.ctr_term answ) (Answer.env answ)
   )
 
+(*
 (** ************************************************************************* *)
 (** Tabling primitives                                                        *)
 
@@ -693,7 +702,7 @@ module Table :
             else
               (* consume one answer term from cache and `lift` it to the current environment *)
               let answ, tail = (Answer.lift env @@ List.hd curr), List.tl curr in
-              match State.unify (Obj.repr args) (Answer.unctr_term answ) st with
+              match State.unify (Term.repr args) (Answer.unctr_term answ) st with
                 | None -> helper start tail seen
                 | Some ({subst=subst'; ctrs=ctrs'} as st') ->
                   begin
@@ -783,6 +792,7 @@ module Tabling =
       g := currier g_tabled;
       !g
   end
+*)
 
 
 let reify_in_empty reifier x =
@@ -790,6 +800,5 @@ let reify_in_empty reifier x =
   reifier (State.env st) x
 
 let trace_diseq : goal = fun st ->
-  Format.printf "%a\n%!" Disequality.pp (State.constraints st) ;
+  Format.printf "%a\n%!" Disequality.pp (State.reify_constraints st) ;
   success st
-

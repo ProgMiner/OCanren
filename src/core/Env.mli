@@ -42,8 +42,15 @@ val check : t -> Term.Var.t -> bool
 
 val check_exn : t -> Term.Var.t -> unit
 
-(* See [Term.var] *)
-val var : t -> 'a -> Term.Var.t option
+(* See [Term.unterm] *)
+val[@inline] unterm : t -> fvar:(Term.Var.t -> 'b) -> fval:(int -> Term.value -> 'b)
+                   -> fcon:(int -> int -> (int -> Term.t) -> 'b) -> fmu:(Term.Mu.t -> 'b)
+                   -> 'a -> 'b
+
+(* See [Term.Flat.unterm] *)
+val [@inline] unterm_flat : t -> fvar:(Term.Var.t -> 'b) -> fval:(int -> Term.value -> 'b)
+                         -> fcon:(int -> int -> (int -> Term.t) -> 'b)
+                         -> 'a -> 'b
 
 val freevars : t -> 'a -> Term.VarSet.t
 

@@ -15,7 +15,7 @@ module X = struct
         =
      fun ra ->
       let ( >>= ) = Env.Monad.bind in
-      Reifier.prj (fun n -> Var1 n) >>= fun r ->
+      Reifier.prj (fun n -> Var1 n) (fun _ _ -> invalid_arg "recursive term") >>= fun r ->
       ra >>= fun fa ->
       Env.Monad.return (fun x -> GT.gmap t fa (r x))
 
