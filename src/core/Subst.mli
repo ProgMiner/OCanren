@@ -38,7 +38,7 @@ type t
 
 val empty : t
 
-val of_map : Term.t Term.VarMap.t -> t
+val of_map : Env.t -> Term.t Term.VarMap.t -> t
 
 val split : t -> Binding.t list
 

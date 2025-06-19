@@ -57,54 +57,109 @@ let varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t =
   )
   Term.VarMap.empty
 
+(* [term] must not be a logic variable *)
+type root = {
+  depth: int;
+  term: Term.t option;
+}
+
+type node =
+| RootNode of root
+| LinkNode of Term.Var.t
+
+let pp_node ppf = let open Format in function
+| RootNode { depth ; term = Some term } -> fprintf ppf "Root{ depth = %d; term = %a }" depth Term.pp term
+| RootNode { depth } -> fprintf ppf "Root{ depth = %d }" depth
+| LinkNode var -> fprintf ppf "Link(%a)" Term.pp @@ Term.repr var
+
 (* mutability is intended to use only for path compression *)
-type t = Term.t Term.VarMap.t ref
+type t = node Term.VarMap.t ref
 
 let empty = ref Term.VarMap.empty
 
-let of_map m = ref m
+let split s =
+  let hlp var node xs =
+    let term = match node with
+    | RootNode { term } -> term
+    | LinkNode var' -> Some (Term.repr var')
+    in
 
-let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) !s []
+    match term with
+    | Some term -> Binding.{ var ; term }::xs
+    | None -> xs
+  in
+
+  Term.VarMap.fold hlp !s []
 
 let pp ppf s =
   let open Format in
   fprintf ppf "{subst| " ;
-  Term.VarMap.iter (fun x t -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) Term.pp t) !s ;
+  Term.VarMap.iter (fun x n -> fprintf ppf "%a |- %a; " Term.pp (Term.repr x) pp_node n) !s ;
   fprintf ppf "|subst}"
 
-type lterm = Var of Term.Var.t | Value of Term.t
-
-let lterm_to_term = function
-| Var   v -> Term.repr v
-| Value t -> t
-
-let walk env subst =
-
-  (* walk var *)
-  let rec walkv v =
+let find env subst =
+  let rec hlp v =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
     Env.check_exn env v ;
 
     match v.Term.Var.subst with
-    | Some term -> walkt term (* path compression here is useless *)
+    | Some term' as term ->
+      begin match Env.var env term' with
+      | Some u -> hlp u (* path compression here is useless *)
+      | None ->
+        (* omit depth heuristic here in favor of [Var.subst] optimization *)
+        v, { depth = 0 ; term }
+      end
     | None ->
       match Term.VarMap.find v !subst with
-      | exception Not_found -> Var v
-      | term ->
-        let res = walkt term in
-        subst := Term.VarMap.add v (lterm_to_term res) !subst ;
+      | exception Not_found -> v, { depth = 0 ; term = None }
+      | RootNode r -> v, r
+      | LinkNode u ->
+        let u, _ as res = hlp u in
+        subst := Term.VarMap.add v (LinkNode u) !subst ;
         res
-
-  (* walk term *)
-  and walkt t =
-    let () = IFDEF STATS THEN walk_incr () ELSE () END in
-
-    match Env.var env t with
-    | Some v -> walkv v
-    | None   -> Value t
   in
 
-  walkv
+  hlp
+
+let union env subst v u =
+  let v, r1 = find env subst v in
+  let u, r2 = find env subst u in
+
+  let subst = !subst in
+  if r1.depth > r2.depth then
+    let subst =
+      if r1.term = None && r2.term <> None
+      then Term.VarMap.add v (RootNode { r1 with term = r2.term }) subst
+      else subst
+    in
+    ref @@ Term.VarMap.add u (LinkNode v) subst
+  else if r1.depth < r2.depth then
+    let subst =
+      if r2.term = None && r1.term <> None
+      then Term.VarMap.add u (RootNode { r2 with term = r1.term }) subst
+      else subst
+    in
+    ref @@ Term.VarMap.add v (LinkNode u) subst
+  else
+    let term = match r1.term with Some _ as t -> t | None -> r2.term in
+    let r1 = { depth = r1.depth + 1 ; term } in
+    let subst = Term.VarMap.add v (RootNode r1) subst in
+    ref @@ Term.VarMap.add u (LinkNode v) subst
+
+(* [var] must be free in [subst], [term] must not be a logic variable *)
+let bind env subst var term =
+  let var, root = find env subst var in
+  let term = Some term in
+
+  ref @@ Term.VarMap.add var (RootNode { root with term }) !subst
+
+type lterm = Var of Term.Var.t | Value of Term.t
+
+let walk env subst v =
+  match find env subst v with
+  | _, { term = Some term } -> Value term
+  | v, _ -> Var v
 
 (* same as [Term.map] but performs [walk] on the road *)
 let map ~fvar ~fval env subst x =
@@ -145,8 +200,13 @@ let extend ~scope env subst var term =
   if scope = var.Term.Var.scope && scope <> Term.Var.non_local_scope then begin
     var.subst <- Some term ;
     subst
-  end else
-    ref @@ Term.VarMap.add var term !subst
+  end else match Env.var env term with
+  | Some term -> union env subst var term
+  | None -> bind env subst var term
+
+let of_map env m =
+  let hlp var term subst = extend ~scope:Term.Var.non_local_scope env subst var term in
+  Term.VarMap.fold hlp m empty
 
 exception Unification_failed
 
