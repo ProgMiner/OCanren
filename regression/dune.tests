@@ -19,6 +19,7 @@
     ; test019tablingCache
     test021structural
     test022newsyntax
+    test023diseq
   )
   (libraries GT OCanren OCanren.tester)
   (preprocess (action
@@ -49,4 +50,5 @@
   ; ./test019tablingCache.exe
   ./test021structural.exe
   ./test022newsyntax.exe
+  ./test023diseq.exe
 ))

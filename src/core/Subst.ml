@@ -57,14 +57,38 @@ let varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t =
   )
   Term.VarMap.empty
 
+let is_var t = Term.unterm t ~fvar:(fun _ -> true)
+  ~fval:(fun _ _ -> false) ~fcon:(fun _ _ _ -> false) ~fmu:(fun _ -> false)
+
 (* term head is a constructor with variables as arguments *)
+let is_term_head t =
+  Term.unterm t ~fvar:(fun _ -> false) ~fval:(fun _ _ -> true) ~fmu:(fun _ -> false)
+    ~fcon:begin fun _ sx xi ->
+      let rec inner i =
+        if i < sx
+        then is_var (xi i) && inner (i + 1)
+        else true
+      in
+
+      inner 0
+    end
 
 (* every right hand side must be either a variable or a term head *)
 type t = Term.t Term.VarMap.t
 
 let empty = Term.VarMap.empty
 
-let of_map m = m
+let of_map m =
+  (* TODO(ProgMiner): currently in Disequality we may have complex right hand sides but they
+     mustn't occur in a substitution to prevent infinite looping. For now, I just forbid them but
+     in future we need to decide how to avoid them. See "regression/test023diseq.ml" to example *)
+  let hlp _ t =
+    if not (is_var t || is_term_head t) then begin
+      failwith "OCanren fatal: not a term head nor a variable in right hand side"
+    end
+  in
+  Term.VarMap.iter hlp m ;
+  m
 
 let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) s []
 

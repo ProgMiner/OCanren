@@ -38,6 +38,7 @@ type t
 
 val empty : t
 
+(* right hand sides must be term heads *)
 val of_map : Term.t Term.VarMap.t -> t
 
 val split : t -> Binding.t list
