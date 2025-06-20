@@ -26,7 +26,6 @@
   q=Arr (_.17, Arr (Arr (_.17, _.32), _.32));
   }
   fun q -> infero (abs varX (app (v varX) (v varX))) q, 1 answer {
-  q=Arr (mu 17 <Arr (_.17, _.18)>, _.18);
   }
   fun q -> infero q (arr (p varX) (p varX)), 1 answer {
   q=Abs (_.18, V (_.18));
