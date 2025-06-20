@@ -142,9 +142,12 @@ module Disjunct :
 
     let refine env subst x y =
       match Subst.unify env subst x y with
-      | None              -> Fulfiled
-      | Some ([], _)      -> Violated
-      | Some (prefix, _)  -> Refined prefix
+      | None                 -> Fulfiled
+      | Some ([], _)         -> Violated
+      | Some (prefix, subst) ->
+        match if Runconf.do_occurs_check () then Subst.occurs_check env subst with
+        | exception Subst.Occurs_check -> Fulfiled
+        | () -> Refined prefix
 
     let make env subst x y =
       match refine env subst x y with
