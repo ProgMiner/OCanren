@@ -314,34 +314,37 @@ module State =
         | Prunes.Violated -> None
         | NonViolated -> Some { st with ctrs }
 
-    (* always returns non-empty list *)
+    (* returns empty list on occurs check *)
     let reify x { env ; subst ; ctrs } =
-      (* TODO(ProgMiner): we may lose constraints on some variables that occurs in constraints
-        but not in original answer *)
-      match Disequality.reify env subst ctrs x with
-      | [] -> (* [Answer.make env answ] *) assert false
-      | diseqs -> ListLabels.map diseqs ~f:begin fun diseq ->
-        let rec helper : 'a . _ -> 'a -> _ = fun forbidden t ->
-          (* we must apply substitution here to reify constraint *)
-          let t = Subst.reify env subst t in
-          Term.unsafe_map t ~fval:Term.repr ~fvar:begin fun v -> Term.repr @@
-            if Term.VarSet.mem v forbidden then v
-            else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
-                |> List.filter begin fun t ->
-                  match Env.shape env t with
-                  | Var u -> not @@ Term.VarSet.mem u forbidden
-                  | _ -> true
-                end
-                |> List.map (helper @@ Term.VarSet.add v forbidden)
-                (* TODO: represent [Var.constraints] as [Set];
-                 * TODO: hide all manipulations on [Var.t] inside [Var] module;
-                 *)
-                |> List.sort Term.compare
-              }
-          end
-        in
-        Answer.make env @@ helper Term.VarSet.empty x
-      end
+      match if Runconf.do_occurs_check () then Subst.occurs_check ~with_roots:true env subst with
+      | exception Subst.Occurs_check -> []
+      | () ->
+        (* TODO(ProgMiner): we may lose constraints on some variables that occurs in constraints
+          but not in original answer *)
+        match Disequality.reify env subst ctrs x with
+        | [] -> (* [Answer.make env answ] *) assert false
+        | diseqs -> ListLabels.map diseqs ~f:begin fun diseq ->
+          let rec helper : 'a . _ -> 'a -> _ = fun forbidden t ->
+            (* we must apply substitution here to reify constraint *)
+            let t = Subst.reify env subst t in
+            Term.unsafe_map t ~fval:Term.repr ~fvar:begin fun v -> Term.repr @@
+              if Term.VarSet.mem v forbidden then v
+              else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
+                  |> List.filter begin fun t ->
+                    match Env.shape env t with
+                    | Var u -> not @@ Term.VarSet.mem u forbidden
+                    | _ -> true
+                  end
+                  |> List.map (helper @@ Term.VarSet.add v forbidden)
+                  (* TODO: represent [Var.constraints] as [Set];
+                   * TODO: hide all manipulations on [Var.t] inside [Var] module;
+                   *)
+                  |> List.sort Term.compare
+                }
+            end
+          in
+          Answer.make env @@ helper Term.VarSet.empty x
+        end
 
     let reify_constraints { env ; subst ; ctrs } = Disequality.reify_t env subst ctrs
   end

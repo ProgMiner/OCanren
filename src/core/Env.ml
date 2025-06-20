@@ -17,7 +17,7 @@
  * (enclosed in the file COPYING).
  *)
 
-type t = {anchor : Term.Var.env; mutable next : int}
+type t = {anchor : Term.Var.env; mutable next : int; mutable roots : Term.Var.t list}
 
 (* TODO: document next two values *)
 let last_anchor = ref 11
@@ -25,9 +25,11 @@ let first_var = 10
 
 let empty () =
   incr last_anchor;
-  {anchor = !last_anchor; next = first_var}
+  {anchor = !last_anchor; next = first_var; roots = []}
 
-let create ~anchor = {anchor; next = first_var}
+let create ~anchor = {anchor; next = first_var; roots = []}
+
+let roots env = env.roots
 
 let fresh ~scope e =
   let v = Obj.magic (Term.Var.make ~env:e.anchor ~scope e.next) in
@@ -38,6 +40,10 @@ let check env v = (v.Term.Var.env = env.anchor)
 
 let check_exn env v =
   if check env v then () else failwith "OCanren fatal (Env.check): wrong environment"
+
+let add_root env v =
+  check_exn env v ;
+  env.roots <- v::env.roots
 
 let shape env x =
   match Term.shape (Term.repr x) with

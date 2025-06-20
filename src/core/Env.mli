@@ -30,6 +30,8 @@ val empty : unit -> t
 
 val create : anchor:Term.Var.env -> t
 
+val roots : t -> Term.Var.t list
+
 (** Creating a fresh variable takes an extra argument [scope] to decide if
     storing a substituted value inside a variable is OKay.
 
@@ -41,6 +43,8 @@ val fresh : scope:Term.Var.scope -> t -> 'a
 val check : t -> Term.Var.t -> bool
 
 val check_exn : t -> Term.Var.t -> unit
+
+val add_root : t -> Term.Var.t -> unit
 
 (* See [Term.shape] *)
 val shape : t -> 'a -> Term.shape

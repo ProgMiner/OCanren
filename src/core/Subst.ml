@@ -140,6 +140,7 @@ let extend ~scope env subst var term =
    *    the variable is be distructively substituted: we will not look on it in future.
    *)
   if scope = var.Term.Var.scope && scope <> Term.Var.non_local_scope then begin
+    Env.add_root env var ;
     var.subst <- Some term ;
     subst
   end else
@@ -198,7 +199,7 @@ let union env subst x y =
 exception Unification_failed
 exception Occurs_check
 
-let occurs_check env subst roots =
+let occurs_check ?(with_roots=false) env subst =
   let vis = Term.VarTbl.create 16 in
 
   let rec hlp x =
@@ -221,7 +222,8 @@ let occurs_check env subst roots =
       | _ -> assert false
   in
 
-  Term.VarSet.iter hlp roots
+  Term.VarMap.iter (fun var _ -> hlp var) subst ;
+  if with_roots then List.iter hlp @@ Env.roots env
 
 let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   let extend = extend ~scope env in
@@ -255,16 +257,8 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   in
 
   let x, y = Term.(repr x, repr y) in
-  match helper x y ([], subst) with
-  | exception Term.Flat.Different_shape _ | exception Unification_failed -> None
-  | prefix, subst ->
-    let roots () =
-      let hlp acc Binding.{ var } = Term.VarSet.add var acc in
-      List.fold_left hlp Term.VarSet.empty prefix
-    in
-    match if Runconf.do_occurs_check () then occurs_check env subst @@ roots () with
-    | exception Occurs_check -> None
-    | () -> Some (prefix, subst)
+  try Some (helper x y ([], subst))
+  with Term.Flat.Different_shape _ | Unification_failed -> None
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
