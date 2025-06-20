@@ -178,7 +178,7 @@ let union env subst x y =
   let x, t1 = walk env subst x in
   let y, t2 = walk env subst y in
 
-  if Term.Var.equal x y then None, None
+  if Term.Var.equal x y || Term.Var.is_wildcard x || Term.Var.is_wildcard y then None, None
   else
     let x, y = match t2 with
     | Some _ -> y, x
@@ -220,7 +220,9 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
     end
     ~fk:begin fun ((prefix, subst) as acc) _ x y ->
       match walk env subst x with
-      | x, None -> extend_prefix prefix x y, inject ~scope env subst x y
+      | x, None ->
+        if Term.Var.is_wildcard x then acc
+        else extend_prefix prefix x y, inject ~scope env subst x y
       | _, Some x -> helper x y acc
     end
   in
