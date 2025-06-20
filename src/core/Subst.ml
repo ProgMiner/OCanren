@@ -98,9 +98,6 @@ let walk env subst =
 
 (* [var] must be free in [subst], [term] must be either a different variable or a constructor *)
 let extend ~scope env subst var term =
-  (* TODO(ProgMiner): implement occurs check in other place *)
-  (* if Runconf.do_occurs_check () then occurs env subst var term; *)
-
   (* It is safe to modify variables destructively if the case of scopes match.
    * There are two cases:
    * 1) If we do unification just after a conde, then the scope is already incremented and nothing goes into
@@ -115,6 +112,26 @@ let extend ~scope env subst var term =
     Term.VarMap.add var term subst
 
 exception Unification_failed
+exception Occurs_check
+
+let occurs_check env subst roots =
+  let vis = Term.VarTbl.create 16 in
+
+  let rec hlp x =
+    match walk env subst x with
+    | _, None -> ()
+    | x, Some term ->
+      begin match Term.VarTbl.find vis x with
+      | false -> raise Occurs_check
+      | true -> ()
+      | exception Not_found ->
+        Term.VarTbl.add vis x false ;
+        Term.Flat.iter ~fvar:hlp ~fval:(fun _ -> ()) term ;
+        Term.VarTbl.replace vis x true
+      end
+  in
+
+  Term.VarSet.iter hlp roots
 
 let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   (* The idea is to do the unification and collect the unification prefix during the process *)
@@ -155,10 +172,17 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
     end
   in
 
-  try
-    let x, y = Term.(repr x, repr y) in
-    Some (helper x y [] ([], subst))
-  with Term.Flat.Different_shape _ | Unification_failed -> None
+  let x, y = Term.(repr x, repr y) in
+  match helper x y [] ([], subst) with
+  | exception Term.Flat.Different_shape _ | exception Unification_failed -> None
+  | prefix, subst ->
+    let roots () =
+      let hlp acc Binding.{ var } = Term.VarSet.add var acc in
+      List.fold_left hlp Term.VarSet.empty prefix
+    in
+    match if Runconf.do_occurs_check () then occurs_check env subst @@ roots () with
+    | exception Occurs_check -> None
+    | () -> Some (prefix, subst)
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
