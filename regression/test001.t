@@ -83,5 +83,4 @@
   q=_.10; r=_.10;
   }
   fun q -> occurs q, all answers {
-  q={_.10 = [1 | _.10]};
   }
