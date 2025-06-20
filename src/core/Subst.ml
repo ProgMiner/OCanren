@@ -60,6 +60,10 @@ let varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t =
 let is_var t = Term.unterm t ~fvar:(fun _ -> true)
   ~fval:(fun _ _ -> false) ~fcon:(fun _ _ _ -> false) ~fmu:(fun _ -> false)
 
+let[@inline] unvar env x =
+  let non_var () = invalid_arg "OCanren fatal: not a term head" in
+  Env.unterm_flat env x ~fvar:Fun.id ~fval:(fun _ _ -> non_var ()) ~fcon:(fun _ _ _ -> non_var ())
+
 (* term head is a constructor with variables as arguments *)
 let is_term_head t =
   Term.unterm t ~fvar:(fun _ -> false) ~fval:(fun _ _ -> true) ~fmu:(fun _ -> false)
@@ -125,9 +129,6 @@ let walk env subst =
 
 (* [var] must be free in [subst], [term] must be either a different variable or a term head *)
 let extend ~scope env subst var term =
-  (* TODO(ProgMiner): implement occurs check in other place *)
-  (* if Runconf.do_occurs_check () then occurs env subst var term; *)
-
   (* It is safe to modify variables destructively if the case of scopes match.
    * There are two cases:
    * 1) If we do unification just after a conde, then the scope is already incremented and nothing goes into
@@ -193,6 +194,30 @@ let union env subst x y =
     Some (ext, y, (Term.repr x)), ts
 
 exception Unification_failed
+exception Occurs_check
+
+let occurs_check env subst roots =
+  let vis = Term.VarTbl.create 16 in
+
+  let rec hlp x =
+    match walk env subst x with
+    | _, None -> ()
+    | x, Some term -> Env.unterm_flat env term
+      ~fvar:(fun _ -> assert false) ~fval:(fun _ _ -> ())
+      ~fcon:begin fun _ sx xi ->
+        match Term.VarTbl.find vis x with
+        | false -> raise Occurs_check
+        | true -> ()
+        | exception Not_found ->
+          Term.VarTbl.add vis x false ;
+          for i = 0 to sx - 1 do
+            hlp (unvar env (xi i))
+          done ;
+          Term.VarTbl.replace vis x true
+      end
+  in
+
+  Term.VarSet.iter hlp roots
 
 let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   let extend = extend ~scope env in
@@ -225,10 +250,17 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
     end
   in
 
-  try
-    let x, y = Term.(repr x, repr y) in
-    Some (helper x y ([], subst))
-  with Term.Flat.Different_shape _ | Unification_failed -> None
+  let x, y = Term.(repr x, repr y) in
+  match helper x y ([], subst) with
+  | exception Term.Flat.Different_shape _ | exception Unification_failed -> None
+  | prefix, subst ->
+    let roots () =
+      let hlp acc Binding.{ var } = Term.VarSet.add var acc in
+      List.fold_left hlp Term.VarSet.empty prefix
+    in
+    match if Runconf.do_occurs_check () then occurs_check env subst @@ roots () with
+    | exception Occurs_check -> None
+    | () -> Some (prefix, subst)
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
@@ -243,14 +275,6 @@ let subsumed env subst = Term.VarMap.for_all @@ fun var term ->
   | _            -> false
 
 let image env subst =
-  let[@inline] unvar x =
-    let non_var () = invalid_arg
-      @@ Format.asprintf "OCanren fatal: not a term head in substitution right hand side %a"
-        pp subst
-    in
-    Env.unterm_flat env x ~fvar:Fun.id ~fval:(fun _ _ -> non_var ()) ~fcon:(fun _ _ _ -> non_var ())
-  in
-
   let vis = Term.VarTbl.create 16 in
   let rec hlp x = match walk env subst x with
   | x, None -> Term.repr x
@@ -260,7 +284,7 @@ let image env subst =
       Term.repr x
     end else begin
       Term.VarTbl.add vis x false ;
-      let t = Term.map_head (fun x -> hlp (unvar x)) t in
+      let t = Term.map_head (fun x -> hlp (unvar env x)) t in
       let t = if Term.VarTbl.find vis x then Term.repr @@ Term.Mu.make x t else t in
       Term.VarTbl.remove vis x ;
       t
