@@ -120,7 +120,7 @@ module Answer :
         ~fvar:begin fun v -> Term.repr @@
           try Term.VarTbl.find vartbl v
           with Not_found ->
-            let new_var = Env.fresh ~scope:Term.Var.non_local_scope env' in
+            let new_var = Env.fresh env' in
             Term.VarTbl.add vartbl v new_var ;
             let ctr = List.map helper v.Term.Var.constraints |> List.sort Term.compare in
             { new_var with Term.Var.constraints = ctr }
@@ -259,7 +259,6 @@ module State =
       ; subst : Subst.t
       ; ctrs  : Disequality.t
       ; prunes: Prunes.t
-      ; scope : Term.Var.scope
       }
 
     type reified = Env.t * Term.t
@@ -269,21 +268,17 @@ module State =
       ; subst = Subst.empty
       ; ctrs  = Disequality.empty
       ; prunes = Prunes.empty
-      ; scope = Term.Var.new_scope ()
       }
 
     let env   {env} = env
     let subst {subst} = subst
     let constraints {ctrs} = ctrs
-    let scope {scope} = scope
     let prunes {prunes} = prunes
 
-    let fresh {env; scope} = Env.fresh ~scope env
+    let fresh {env} = Env.fresh env
 
-    let new_scope st = {st with scope = Term.Var.new_scope ()}
-
-    let unify x y ({ env ; subst ; ctrs ; scope } as st) =
-      match Subst.unify ~scope env subst x y with
+    let unify x y ({ env ; subst ; ctrs } as st) =
+      match Subst.unify env subst x y with
       | None -> None
       | Some (prefix, subst) ->
         match Disequality.recheck env subst ctrs prefix with
@@ -302,7 +297,7 @@ module State =
             Some next_state
           end
 
-    let diseq x y ({ env ; subst ; ctrs ; scope } as st) =
+    let diseq x y ({ env ; subst ; ctrs } as st) =
       match Disequality.add env subst ctrs x y with
       | None      -> None
       | Some ctrs ->
@@ -473,13 +468,11 @@ let disj_base f g st = Stream.mplus (f st) (Stream.from_fun (fun () -> g st))
 
 let disj f g st =
   let () = IFDEF STATS THEN disj_counter_incr () ELSE () END in
-  let st = State.new_scope st in
   disj_base f g |> (fun g -> Stream.from_fun (fun () -> g st))
 
 let (|||) = disj
 
 let (?|) gs st =
-  let st = State.new_scope st in
   let rec inner = function
   | [g]   -> g
   | g::gs -> disj_base g (inner gs)
@@ -490,7 +483,6 @@ let (?|) gs st =
 let conde = (?|)
 
 let condo2 a b st =
-  let st = State.new_scope st in
   match Stream.msplit @@ a st with
   | Some (a, b) -> Stream.cons a b
   | None -> b st
@@ -509,10 +501,9 @@ module Fresh =
 
     (* N.B. Manual inlining of numerals will speed-up OCanren a bit (mainly because of less memory consumption) *)
     (* let two   g = fun st ->
-      let scope = State.scope st in
       let env = State.env st in
-      let q = Env.fresh ~scope env in
-      let r = Env.fresh ~scope env in
+      let q = Env.fresh env in
+      let r = Env.fresh env in
       g q r st *)
 
     let three f = succ two f
@@ -676,8 +667,7 @@ module Table :
           with Not_found -> false
 
         let consume (cache, _) args =
-          let open State in fun {env; subst; scope} as st ->
-          let st = State.new_scope st in
+          let open State in fun {env; subst} as st ->
           (* [helper start curr seen] consumes answer terms from cache one by one
            *   until [curr] (i.e. current pointer into cache list) is not equal to [seen]
            *   (i.e. to the head of seen part of the cache list)

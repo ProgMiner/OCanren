@@ -44,7 +44,7 @@ val split : t -> Binding.t list
 
 val pp : Format.formatter -> t -> unit
 
-(* [unify ~subsume ~scope env subst x y] performs unification of two terms [x] and [y] in [subst].
+(* [unify ~subsume env subst x y] performs unification of two terms [x] and [y] in [subst].
  *   Unification is a process of finding substituion [s] s.t. [s(x) = s(y)].
  *   Returns [None] if two terms are not unifiable.
  *   Otherwise it returns a pair of diff and new substituion.
@@ -55,7 +55,7 @@ val pp : Format.formatter -> t -> unit
  *   This can be used to perform subsumption check:
  *   [y] is subsumed by [x] (i.e. [x] is more general than [x]) if such a unification succeeds.
  *)
-val unify : ?subsume:bool -> ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
+val unify : ?subsume:bool -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
 
 val unify_map : Env.t -> t -> Term.t Term.VarMap.t -> (Binding.t list * t) option
 
