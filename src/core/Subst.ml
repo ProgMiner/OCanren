@@ -92,7 +92,8 @@ let walk env subst =
       | exception Not_found -> Var v
       | term ->
         let res = walkt term in
-        subst := Term.VarMap.add v (lterm_to_term res) !subst ;
+        let term' = lterm_to_term res in
+        if term != term' then subst := Term.VarMap.add v term' !subst ;
         res
 
   (* walk term *)
