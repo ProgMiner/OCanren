@@ -45,14 +45,14 @@ val split : t -> Binding.t list
 
 val pp : Format.formatter -> t -> unit
 
-(* [unify ~scope env subst x y] performs unification of two flat terms [x] and [y] in [subst].
+(* [unify env subst x y] performs unification of two flat terms [x] and [y] in [subst].
  *   Unification is a process of finding substituion [s] s.t. [s(x) = s(y)].
  *   Returns [None] if two terms are not unifiable.
  *   Otherwise it returns a pair of diff and new substituion.
  *   Diff is a list of pairs (var, term) that were added to the original substituion.
  *   Current algorithm doesn't forbid recursive terms.
  *)
-val unify : ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
+val unify : Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
 
 val unify_map : Env.t -> t -> Term.t Term.VarMap.t -> (Binding.t list * t) option
 
