@@ -157,10 +157,10 @@ let union env subst v u =
     in
     ref @@ Term.VarMap.add v (LinkNode u) subst
   else
-    let term = match r1.term with Some _ as t -> t | None -> r2.term in
-    let r1 = { depth = r1.depth + 1 ; term } in
-    let subst = Term.VarMap.add v (RootNode r1) subst in
-    ref @@ Term.VarMap.add u (LinkNode v) subst
+    let term = match r2.term with Some _ as t -> t | None -> r1.term in
+    let r2 = { depth = r2.depth + 1 ; term } in
+    let subst = Term.VarMap.add u (RootNode r2) subst in
+    ref @@ Term.VarMap.add v (LinkNode u) subst
 
 (* [var] must be free in [subst], [term] must not be a logic variable *)
 let bind env subst var term =
@@ -240,9 +240,11 @@ let union env subst x y =
 
   if Term.Var.equal x y then None, None
   else
-    let x, y = match r2.term with
-    | Some _ -> y, x
-    | None -> x, y
+    (* we must satisfy [union] (previous) strategy *)
+    let x, y = match r1.term, r2.term with
+    | _, Some _ -> y, x
+    | Some _, None -> x, y
+    | None, None -> if r1.depth > r2.depth then x, y else y, x
     in
 
     let ext, ts = match r1.term, r2.term with

@@ -17,17 +17,17 @@
   q=[("x", V ("y")) | _.13];
   }
   fun q -> infero (abs varX (v varX)) q, 1 answer {
-  q=Arr (_.18, _.18);
+  q=Arr (_.22, _.22);
   }
   fun q -> infero (abs varF (abs varX (app (v varF) (v varX)))) q, 1 answer {
-  q=Arr (Arr (_.36, _.32), Arr (_.36, _.32));
+  q=Arr (Arr (_.43, _.32), Arr (_.43, _.32));
   }
   fun q -> infero (abs varX (abs varF (app (v varF) (v varX)))) q, 1 answer {
-  q=Arr (_.36, Arr (Arr (_.36, _.32), _.32));
+  q=Arr (_.74, Arr (Arr (_.74, _.32), _.32));
   }
   fun q -> infero (abs varX (app (v varX) (v varX))) q, 1 answer {
-  q=Arr (mu 26 <Arr (_.26, _.18)>, _.18);
+  q=Arr (mu 33 <Arr (_.33, _.18)>, _.18);
   }
   fun q -> infero q (arr (p varX) (p varX)), 1 answer {
-  q=Abs (_.31, V (_.31));
+  q=Abs (_.32, V (_.32));
   }
