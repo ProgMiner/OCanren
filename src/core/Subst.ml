@@ -80,11 +80,8 @@ let walk env subst =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
     Env.check_exn env v ;
 
-    match v.Term.Var.subst with
-    | Some term -> walkt term
-    | None ->
-        try walkt (Term.VarMap.find v subst)
-        with Not_found -> Var v
+    try walkt (Term.VarMap.find v subst)
+    with Not_found -> Var v
 
   (* walk term *)
   and walkt t =
@@ -123,28 +120,16 @@ let rec occurs env subst var term = iter env subst term ~fval:(fun _ -> ())
   ~fvar:(fun v -> if Term.Var.equal v var then raise Occurs_check)
 
 (* [var] must be free in [subst], [term] must not be the same variable *)
-let extend ~scope env subst var term =
+let extend env subst var term =
   if Runconf.do_occurs_check () then occurs env subst var term ;
-
-  (* It is safe to modify variables destructively if the case of scopes match.
-   * There are two cases:
-   * 1) If we do unification just after a conde, then the scope is already incremented and nothing goes into
-   *    the fresh variables.
-   * 2) If we do unification after a fresh, then in case of failure it doesn't matter if
-   *    the variable is be distructively substituted: we will not look on it in future.
-   *)
-  if scope = var.Term.Var.scope && scope <> Term.Var.non_local_scope then begin
-    var.subst <- Some term ;
-    subst
-  end else
-    Term.VarMap.add var term subst
+  Term.VarMap.add var term subst
 
 exception Unification_failed
 
-let unify ?(subsume=false) ?(scope=Term.Var.non_local_scope) env subst x y =
+let unify ?(subsume=false) env subst x y =
   (* The idea is to do the unification and collect the unification prefix during the process *)
   let extend var term (prefix, subst) =
-    let subst = extend ~scope env subst var term in
+    let subst = extend env subst var term in
     Binding.{ var ; term }::prefix, subst
   in
 
