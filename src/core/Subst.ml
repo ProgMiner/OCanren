@@ -118,21 +118,13 @@ let find env subst =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
     Env.check_exn env v ;
 
-    match v.Term.Var.subst with
-    | Some term' as term ->
-      Env.unterm_flat env term'
-        ~fvar:hlp (* path compression here is useless *)
-        (* omit depth heuristic here in favor of [Var.subst] optimization *)
-        ~fval:(fun _ _ -> v, { depth = 0 ; term })
-        ~fcon:(fun _ _ _ -> v, { depth = 0 ; term })
-    | None ->
-      match Term.VarMap.find v !subst with
-      | exception Not_found -> v, { depth = 0 ; term = None }
-      | RootNode r -> v, r
-      | LinkNode u ->
-        let u', _ as res = hlp u in
-        if u != u' then subst := Term.VarMap.add v (LinkNode u') !subst ;
-        res
+    match Term.VarMap.find v !subst with
+    | exception Not_found -> v, { depth = 0 ; term = None }
+    | RootNode r -> v, r
+    | LinkNode u ->
+      let u', _ as res = hlp u in
+      if u != u' then subst := Term.VarMap.add v (LinkNode u') !subst ;
+      res
   in
 
   hlp
@@ -170,21 +162,10 @@ let bind env subst var term =
   ref @@ Term.VarMap.add var (RootNode { root with term }) !subst
 
 (* [var] must be free in [subst], [term] must be either a different variable or a term head *)
-let extend ~scope env subst var term =
+let extend env subst var term =
   (* TODO(ProgMiner): implement occurs check in other place *)
   (* if Runconf.do_occurs_check () then occurs env subst var term; *)
-
-  (* It is safe to modify variables destructively if the case of scopes match.
-   * There are two cases:
-   * 1) If we do unification just after a conde, then the scope is already incremented and nothing goes into
-   *    the fresh variables.
-   * 2) If we do unification after a fresh, then in case of failure it doesn't matter if
-   *    the variable is be distructively substituted: we will not look on it in future.
-   *)
-  if scope = var.Term.Var.scope && scope <> Term.Var.non_local_scope then begin
-    var.subst <- Some term ;
-    subst
-  end else Env.unterm_flat env term ~fvar:(union env subst var)
+  Env.unterm_flat env term ~fvar:(union env subst var)
     ~fval:(fun _ _ -> bind env subst var term)
     ~fcon:(fun _ _ _ -> bind env subst var term)
 
@@ -198,20 +179,19 @@ let of_map env m =
     end
   in
   Term.VarMap.iter hlp m ;
-  let hlp var term subst = extend ~scope:Term.Var.non_local_scope env subst var term in
+  let hlp var term subst = extend env subst var term in
   Term.VarMap.fold hlp m empty
 
 (* [var] must be free in [subst], [term] mustn't be a variable or a mu-binder.
  * [inject] "x = f(t1, ..., tn)" replaces terms "ti" with fresh variables "yi",
  * then injects "yi = ti" in [subst], then extends [subst] with "x = f(y1, ..., yn)"
  *)
-let inject ~scope env subst =
-  let extend = extend ~scope env in
+let inject env subst =
   let subst = ref subst in
 
   let rec inject var term =
     let non_var term =
-      let var = Env.fresh ~scope env in
+      let var = Env.fresh env in
       inject var term ;
       Term.repr var
     in
@@ -221,7 +201,7 @@ let inject ~scope env subst =
     in
 
     let term = Term.map_head hlp term in
-    subst := extend !subst var term
+    subst := bind env !subst var term
   in
 
   fun var term ->
@@ -234,13 +214,13 @@ let inject ~scope env subst =
  *)
 type union_extend = Extend | Prefire
 
-let union env subst x y =
+let union' env subst x y =
   let x, r1 = find env subst x in
   let y, r2 = find env subst y in
 
-  if Term.Var.equal x y then None, None
+  if x == y then None, None
   else
-    (* we must satisfy [union] (previous) strategy *)
+    (* we must satisfy [union] strategy *)
     let x, y = match r1.term, r2.term with
     | _, Some _ -> y, x
     | Some _, None -> x, y
@@ -252,24 +232,22 @@ let union env subst x y =
     | _ -> Extend, None
     in
 
-    Some (ext, y, (Term.repr x)), ts
+    Some (ext, y, x), ts
 
 exception Unification_failed
 
-let unify ?(scope=Term.Var.non_local_scope) env subst x y =
-  let extend = extend ~scope env in
-
+let unify env subst x y =
   (* The idea is to do the unification and collect the unification prefix during the process *)
   let extend_prefix prefix var term = Binding.{ var ; term }::prefix in
 
   let rec helper x y acc = Term.Flat.fold2 x y ~init:acc
     ~fvar:begin fun ((prefix, subst) as acc) x y ->
-      let ext, ts = union env subst x y in
+      let ext, ts = union' env subst x y in
 
       let acc = match ext with
       | None -> acc
-      | Some (Extend, x, y) -> extend_prefix prefix x y, extend subst x y
-      | Some (Prefire, x, y) -> prefix, extend subst x y
+      | Some (Extend, x, y) -> extend_prefix prefix x (Term.repr y), union env subst x y
+      | Some (Prefire, x, y) -> prefix, union env subst x y
       in
 
       match ts with
@@ -283,7 +261,7 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
     ~fk:begin fun ((prefix, subst) as acc) _ x y ->
       let x, r = find env subst x in
       match r.term with
-      | None -> extend_prefix prefix x y, inject ~scope env subst x y
+      | None -> extend_prefix prefix x y, inject env subst x y
       | Some x -> helper x y acc
     end
   in
