@@ -250,7 +250,7 @@
   q=[_.12 [=/= _.11]; 2];
   }
   fun q -> distincto (!2 % (!3 %< q)), all answers {
-  q=_.10 [=/= 2; =/= 3];
+  q=_.18 [=/= 2; =/= 3];
   }
   fun q -> remembero !1 (!1 % (!2 % (!1 %< !3))) q, all answers {
   q=[2; 3];
