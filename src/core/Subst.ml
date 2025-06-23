@@ -99,6 +99,8 @@ let of_map m =
 
 let split s = Term.VarMap.fold (fun var term xs -> Binding.{ var ; term }::xs) s []
 
+let size = Term.VarMap.cardinal
+
 let pp ppf s =
   let open Format in
   fprintf ppf "{subst| " ;

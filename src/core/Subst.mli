@@ -43,6 +43,8 @@ val of_map : Term.t Term.VarMap.t -> t
 
 val split : t -> Binding.t list
 
+val size : t -> int
+
 val pp : Format.formatter -> t -> unit
 
 exception Occurs_check

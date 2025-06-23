@@ -264,6 +264,7 @@ module State =
       ; ctrs  : Disequality.t
       ; prunes: Prunes.t
       ; scope : Term.Var.scope
+      ; next_occurs: int
       }
 
     type reified = Env.t * Term.t
@@ -274,6 +275,7 @@ module State =
       ; ctrs  = Disequality.empty
       ; prunes = Prunes.empty
       ; scope = Term.Var.new_scope ()
+      ; next_occurs = 16
       }
 
     let env   {env} = env
@@ -286,25 +288,36 @@ module State =
 
     let new_scope st = {st with scope = Term.Var.new_scope ()}
 
-    let unify x y ({ env ; subst ; ctrs ; scope } as st) =
+    let unify x y ({ env ; subst ; ctrs ; scope ; next_occurs } as st) =
       match Subst.unify ~scope env subst x y with
       | None -> None
       | Some (prefix, subst) ->
-        match Disequality.recheck env subst ctrs prefix with
-        | None      -> None
-        | Some ctrs ->
-          let next_state = { st with subst ; ctrs } in
-          if PrunesControl.is_exceeded ()
-          then begin
-            let () = PrunesControl.reset_cur_counter () in
-            match Prunes.recheck (prunes next_state) env subst with
-            | Prunes.Violated -> None
-            | NonViolated -> Some next_state
-          end else begin
-            (* print_endline "check skipped"; *)
-            let () = PrunesControl.incr () in
-            Some next_state
+        let occurs_check () =
+          let subst_size = Subst.size subst in
+          if subst_size < next_occurs then st else begin
+            Subst.occurs_check env subst ;
+            let next_occurs = subst_size * 2 in
+            { st with next_occurs }
           end
+        in
+        match if Runconf.do_occurs_check () then occurs_check () else st with
+        | exception Subst.Occurs_check -> None
+        | st ->
+          match Disequality.recheck env subst ctrs prefix with
+          | None      -> None
+          | Some ctrs ->
+            let st = { st with subst ; ctrs } in
+            if PrunesControl.is_exceeded ()
+            then begin
+              let () = PrunesControl.reset_cur_counter () in
+              match Prunes.recheck (prunes st) env subst with
+              | Prunes.Violated -> None
+              | NonViolated -> Some st
+            end else begin
+              (* print_endline "check skipped"; *)
+              let () = PrunesControl.incr () in
+              Some st
+            end
 
     let diseq x y ({ env ; subst ; ctrs ; scope } as st) =
       match Disequality.add env subst ctrs x y with
