@@ -86,19 +86,16 @@ module Mu :
 
 type value
 
+type shape =
+| Var of Var.t
+| Val of int
+| Con of int * int * (int -> t)
+| Mu of Mu.t
+
 val repr : 'a -> t
 
-(* [unterm ~fvar ~fval ~fcon ~fmu x] matches term using
- * [fvar x] for variable [x], [fval tag x] for primitive [x],
- * [fcon tag size arg x] for constructor [x] of form "tag(arg_1, ..., arg_size)"
- * and [fmu x] for mu-binder [x]
- *)
-val[@inline] unterm
-  : fvar:(Var.t -> 'a)
- -> fval:(int -> value -> 'a)
- -> fcon:(int -> int -> (int -> t) -> 'a)
- -> fmu:(Mu.t -> 'a)
- -> t -> 'a
+(* [shape x] determines shape term *)
+val shape : t -> shape
 
 val show : t -> string
 val pp : Format.formatter -> t -> unit
@@ -118,33 +115,30 @@ val map_head : (t -> t) -> t -> t
  *   It is unsafe to use for substitution due to possible variables capturing!
  * TODO(ProgMiner): rename into [map] after refactoring
  *)
-val unsafe_map : fvar:(Var.t -> t) -> fval:(int -> value -> t) -> t -> t
+val unsafe_map : fvar:(Var.t -> t) -> fval:(value -> t) -> t -> t
 
 (* [iter ~fvar ~fval x] iterates over OCaml's value extended with logic variables and mu-binders;
  *   handles primitive types with the help of [fval] and logic variables with the help of [fvar];
  *   bound variables are skipped
  *)
-val iter : fvar:(Var.t -> unit) -> fval:(int -> value -> unit) -> t -> unit
+val iter : fvar:(Var.t -> unit) -> fval:(value -> unit) -> t -> unit
 
 (* [fold ~fvar ~fval ~init x] fold over OCaml's value extended with logic variables and mu-binders;
  *   handles primitive types with the help of [fval] and logic variables with the help of [fvar];
  *   bound variables are skipped
  *)
-val fold : fvar:('a -> Var.t -> 'a) -> fval:('a -> int -> value -> 'a) -> init:'a -> t -> 'a
+val fold : fvar:('a -> Var.t -> 'a) -> fval:('a -> value -> 'a) -> init:'a -> t -> 'a
 
 (* [Flat] module operates with flat terms without mu-binders *)
 module Flat :
   sig
 
-    val[@inline] unterm
-      : fvar:(Var.t -> 'a)
-     -> fval:(int -> value -> 'a)
-     -> fcon:(int -> int -> (int -> t) -> 'a)
-     -> t -> 'a
+    (* never returns [Mu], raises an error instead *)
+    val shape : t -> shape
 
-    val map : fvar:(Var.t -> t) -> fval:(int -> value -> t) -> t -> t
-    val iter : fvar:(Var.t -> unit) -> fval:(int -> value -> unit) -> t -> unit
-    val fold : fvar:('a -> Var.t -> 'a) -> fval:('a -> int -> value -> 'a) -> init:'a -> t -> 'a
+    val map : fvar:(Var.t -> t) -> fval:(value -> t) -> t -> t
+    val iter : fvar:(Var.t -> unit) -> fval:(value -> unit) -> t -> unit
+    val fold : fvar:('a -> Var.t -> 'a) -> fval:('a -> value -> 'a) -> init:'a -> t -> 'a
 
     exception Different_shape of int * int
     type label = L | R
@@ -157,7 +151,7 @@ module Flat :
      *)
     val fold2
       : fvar:('a -> Var.t -> Var.t -> 'a)
-     -> fval:('a -> int -> value -> value -> 'a)
+     -> fval:('a -> value -> value -> 'a)
      -> fk:('a -> label -> Var.t -> t -> 'a)
      -> init:'a -> t -> t -> 'a
   end

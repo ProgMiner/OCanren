@@ -57,21 +57,23 @@ let varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t =
   )
   Term.VarMap.empty
 
-let is_var t = Term.unterm t ~fvar:(fun _ -> true)
-  ~fval:(fun _ _ -> false) ~fcon:(fun _ _ _ -> false) ~fmu:(fun _ -> false)
+let is_var t =
+  match Term.shape t with
+  | Var _ -> true
+  | _ -> false
 
 (* term head is a constructor with variables as arguments *)
 let is_term_head t =
-  Term.unterm t ~fvar:(fun _ -> false) ~fval:(fun _ _ -> true) ~fmu:(fun _ -> false)
-    ~fcon:begin fun _ sx xi ->
-      let rec inner i =
-        if i < sx
-        then is_var (xi i) && inner (i + 1)
-        else true
-      in
-
-      inner 0
-    end
+  match Term.shape t with
+  | Val _ -> true
+  | Con (_, sx, xi) ->
+    let rec inner i =
+      if i < sx
+      then is_var (xi i) && inner (i + 1)
+      else true
+    in
+    inner 0
+  | _ -> false
 
 (* every right hand side must be either a variable or a term head *)
 type t = Term.t Term.VarMap.t
@@ -116,9 +118,9 @@ let walk env subst =
   and walkt v t =
     let () = IFDEF STATS THEN walk_incr () ELSE () END in
 
-    Env.unterm_flat env t ~fvar:walkv
-      ~fval:(fun _ _ -> v, Some t)
-      ~fcon:(fun _ _ _ -> v, Some t)
+    match Env.shape_flat env t with
+    | Var v -> walkv v
+    | _ -> v, Some t
   in
 
   walkv
@@ -150,16 +152,16 @@ let inject ~scope env subst =
   let subst = ref subst in
 
   let rec inject var term =
-    let non_var term =
-      let var = Env.fresh ~scope env in
-      inject var term ;
-      Term.repr var
+    let hlp term =
+      match Env.shape_flat env term with
+      | Var var -> Term.repr var
+      | _ -> 
+        let var = Env.fresh ~scope env in
+        inject var term ;
+        Term.repr var
     in
 
-    let hlp term = Env.unterm_flat env term ~fvar:Term.repr
-      ~fval:(fun _ _ -> non_var term) ~fcon:(fun _ _ _ -> non_var term)
-    in
-
+    (* TODO: check is term head already *)
     let term = Term.map_head hlp term in
     subst := extend !subst var term
   in
@@ -214,7 +216,7 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
       | None -> acc
       | Some (x, y) -> helper x y acc
     end
-    ~fval:begin fun acc _ x y ->
+    ~fval:begin fun acc x y ->
       if x = y then acc
       else raise Unification_failed
     end
@@ -243,12 +245,12 @@ let subsumed env subst = Term.VarMap.for_all @@ fun var term ->
   | _            -> false
 
 let image env subst =
-  let[@inline] unvar x =
-    let non_var () = invalid_arg
+  let unvar x =
+    match Env.shape_flat env x with
+    | Var x -> x
+    | _ -> invalid_arg
       @@ Format.asprintf "OCanren fatal: not a term head in substitution right hand side %a"
         pp subst
-    in
-    Env.unterm_flat env x ~fvar:Fun.id ~fval:(fun _ _ -> non_var ()) ~fcon:(fun _ _ _ -> non_var ())
   in
 
   let vis = Term.VarTbl.create 16 in
@@ -260,7 +262,7 @@ let image env subst =
       Term.repr x
     end else begin
       Term.VarTbl.add vis x false ;
-      let t = Term.map_head (fun x -> hlp (unvar x)) t in
+      let t = Term.map_head (fun x -> hlp @@ unvar x) t in
       let t = if Term.VarTbl.find vis x then Term.repr @@ Term.Mu.make x t else t in
       Term.VarTbl.remove vis x ;
       t
@@ -269,7 +271,7 @@ let image env subst =
 
   hlp
 
-let apply env subst = Term.Flat.map ~fvar:(image env subst) ~fval:(fun _ -> Term.repr)
+let apply env subst = Term.Flat.map ~fvar:(image env subst) ~fval:Term.repr
 
 let freevars env subst x = Env.freevars env @@ apply env subst x
 

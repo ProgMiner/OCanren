@@ -42,15 +42,11 @@ val check : t -> Term.Var.t -> bool
 
 val check_exn : t -> Term.Var.t -> unit
 
-(* See [Term.unterm] *)
-val[@inline] unterm : t -> fvar:(Term.Var.t -> 'b) -> fval:(int -> Term.value -> 'b)
-                   -> fcon:(int -> int -> (int -> Term.t) -> 'b) -> fmu:(Term.Mu.t -> 'b)
-                   -> 'a -> 'b
+(* See [Term.shape] *)
+val shape : t -> 'a -> Term.shape
 
-(* See [Term.Flat.unterm] *)
-val [@inline] unterm_flat : t -> fvar:(Term.Var.t -> 'b) -> fval:(int -> Term.value -> 'b)
-                         -> fcon:(int -> int -> (int -> Term.t) -> 'b)
-                         -> 'a -> 'b
+(* See [Term.Flat.shape] *)
+val shape_flat : t -> 'a -> Term.shape
 
 val freevars : t -> 'a -> Term.VarSet.t
 

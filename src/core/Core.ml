@@ -324,12 +324,13 @@ module State =
         let rec helper : 'a . _ -> 'a -> _ = fun forbidden t ->
           (* we must apply substitution here to reify constraint *)
           let t = Subst.reify env subst t in
-          Term.unsafe_map t ~fval:(fun _ -> Term.repr) ~fvar:begin fun v -> Term.repr @@
+          Term.unsafe_map t ~fval:Term.repr ~fvar:begin fun v -> Term.repr @@
             if Term.VarSet.mem v forbidden then v
             else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
-                |> List.filter begin Env.unterm env
-                  ~fvar:(fun u -> not @@ Term.VarSet.mem u forbidden)
-                  ~fval:(fun _ _ -> true) ~fcon:(fun _ _ _ -> true) ~fmu:(fun _ -> true)
+                |> List.filter begin fun t ->
+                  match Env.shape env t with
+                  | Var u -> not @@ Term.VarSet.mem u forbidden
+                  | _ -> true
                 end
                 |> List.map (helper @@ Term.VarSet.add v forbidden)
                 (* TODO: represent [Var.constraints] as [Set];

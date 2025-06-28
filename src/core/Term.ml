@@ -145,6 +145,12 @@ module Mu =
 
 type value = Obj.t
 
+type shape =
+| Var of Var.t
+| Val of int
+| Con of int * int * (int -> t)
+| Mu of Mu.t
+
 let repr = Obj.repr
 let obj = Obj.obj
 
@@ -161,34 +167,35 @@ let is_val t = is_int t || is_str t || is_dbl t
 let check_val t =
   if not @@ is_val t then invalid_arg @@ sprintf "OCanren fatal: invalid value tag (%d)" t
 
-let[@inline] unterm ~fvar ~fval ~fcon ~fmu x =
+let[@inline] shape x =
   let tx = Obj.tag x in
   if is_box tx then
     let sx = Obj.size x in
-    if Var.has_var_structure tx sx x then fvar (obj x)
-    else if Mu.has_mu_structure tx sx x then fmu (obj x)
-    else fcon tx sx (Obj.field x)
+    if Var.has_var_structure tx sx x then Var (obj x)
+    else if Mu.has_mu_structure tx sx x then Mu (obj x)
+    else Con (tx, sx, Obj.field x)
   else begin
     check_val tx ;
-    fval tx x
+    Val tx
   end
 
-let [@inline] make_con tx sx xi =
+let make_con tx sx xi =
   let x = Obj.new_block tx sx in
   for i = 0 to sx - 1 do
     Obj.set_field x i (xi i)
   done ;
   x
 
-let rec pp ppf = let open Format in unterm
-  ~fvar:(Var.pp pp ppf)
-  ~fval:begin fun tx x ->
+let rec pp ppf x =
+  let open Format in
+  match shape x with
+  | Var x -> Var.pp pp ppf x
+  | Val tx ->
     if is_int tx then fprintf ppf "int<%d>" @@ obj x
     else if is_str tx then fprintf ppf "string<%s>" @@ obj x
     else if is_dbl tx then fprintf ppf "double<%e>" @@ obj x
     else assert false
-  end
-  ~fcon:begin fun tx sx xi ->
+  | Con (tx, sx, xi) ->
     let rec inner i =
       if i < sx then begin
         if i > 0 then fprintf ppf ", " ;
@@ -199,109 +206,81 @@ let rec pp ppf = let open Format in unterm
     fprintf ppf "boxed %d <" tx ;
     inner 0 ;
     fprintf ppf ">"
-  end
-  ~fmu:(fun x -> fprintf ppf "mu %a <%a>" Var.describe x.Mu.var pp x.Mu.body)
+  | Mu x -> fprintf ppf "mu %a <%a>" Var.describe x.Mu.var pp x.Mu.body
 
 let show x = Format.asprintf "%a" pp x
 
-let equal =
-  let[@inline] unterm ?(fvar=fun _ -> false) ?(fval=fun _ _ -> false)
-                      ?(fcon=fun _ _ _ -> false) ?(fmu=fun _ -> false) x
-    = unterm x ~fvar ~fval ~fcon ~fmu
-  in
-  let rec hlp x y = unterm x
-    ~fvar:begin fun x -> unterm y
-      ~fvar:(fun y -> Var.equal x y && List.equal hlp x.Var.constraints y.Var.constraints)
-    end
-    ~fval:(fun _ x -> unterm y ~fval:(fun _ y -> x = y))
-    ~fcon:begin fun tx sx xi -> unterm y
-      ~fcon:begin fun ty sy yi ->
-        if tx = ty && sx = sy then
-          let rec inner i =
-            if i < sx then hlp (xi i) (yi i) && inner (i + 1)
-            else true
-          in
-          inner 0
-        else false
-      end
-    end
-    ~fmu:begin fun x -> unterm y
-      ~fmu:(fun y -> Var.equal x.Mu.var y.Mu.var && hlp x.Mu.body y.Mu.body)
-    end
-  in
-  hlp
+let rec equal x y =
+  match shape x, shape y with
+  | Var x, Var y -> Var.equal x y && List.equal equal x.Var.constraints y.Var.constraints
+  | Val _, Val _ -> x = y
+  | Con (tx, sx, xi), Con (ty, sy, yi) when tx = ty && sx = sy ->
+    let rec inner i =
+      if i < sx then equal (xi i) (yi i) && inner (i + 1)
+      else true
+    in
+    inner 0
+  | Mu x, Mu y -> Var.equal x.Mu.var y.Mu.var && equal x.Mu.body y.Mu.body
+  | _ -> false
 
 let compare' = compare
 
-let compare x y = unterm x
-  ~fvar:begin fun x -> unterm y
-    ~fvar:begin fun y ->
-      let res = Var.compare x y in
-      if res <> 0 then res
-      else List.compare compare x.Var.constraints y.Var.constraints
-    end
-    ~fval:(fun _ _ -> -1)
-    ~fcon:(fun _ _ _ -> -1)
-    ~fmu:(fun _ -> -1)
-  end
-  ~fval:begin fun _ x -> unterm y
-    ~fvar:(fun _ -> 1)
-    ~fval:(fun _ y -> compare' x y)
-    ~fcon:(fun _ _ _ -> -1)
-    ~fmu:(fun _ -> -1)
-  end
-  ~fcon:begin fun tx sx xi -> unterm y
-    ~fvar:(fun _ -> 1)
-    ~fval:(fun _ _ -> 1)
-    ~fcon:begin fun ty sy yi ->
-      if tx <> ty then compare' tx ty
-      else if sx <> sy then compare' sx sy
-      else
-        let rec inner i =
-          if i < sx then
-            let res = compare (xi i) (yi i) in
-            if res <> 0 then res else inner (i + 1)
-          else 0
-        in
-        inner 0
-    end
-    ~fmu:(fun _ -> -1)
-  end
-  ~fmu:begin fun x -> unterm y
-    ~fvar:(fun _ -> 1)
-    ~fval:(fun _ _ -> 1)
-    ~fcon:(fun _ _ _ -> 1)
-    ~fmu:begin fun y ->
-      let res = Var.compare x.Mu.var y.Mu.var in
-      if res <> 0 then res else compare x.Mu.body y.Mu.body
-    end
-  end
+let compare x y =
+  match shape x, shape y with
+  | Var x, Var y ->
+    let res = Var.compare x y in
+    if res <> 0 then res
+    else List.compare compare x.Var.constraints y.Var.constraints
+  | Var _, _ -> -1
+  | _, Var _ -> 1
+  | Val _, Val _ -> compare' x y
+  | Val _, _ -> -1
+  | _, Val _ -> 1
+  | Con (tx, sx, xi), Con (ty, sy, yi) ->
+    if tx <> ty then compare' tx ty
+    else if sx <> sy then compare' sx sy
+    else
+      let rec inner i =
+        if i < sx then
+          let res = compare (xi i) (yi i) in
+          if res <> 0 then res else inner (i + 1)
+        else 0
+      in
+      inner 0
+  | Con _, _ -> -1
+  | _, Con _ -> 1
+  | Mu x, Mu y ->
+    let res = Var.compare x.Mu.var y.Mu.var in
+    if res <> 0 then res else compare x.Mu.body y.Mu.body
 
-let rec hash x = unterm x
-  ~fval:(fun _ -> Hashtbl.hash)
-  ~fvar:begin fun x ->
+let rec hash x =
+  match shape x with
+  | Var x ->
     let cs = List.map hash x.Var.constraints in
     Hashtbl.hash (Var.hash x, cs)
-  end
-  ~fcon:begin fun tx sx xi ->
+  | Val _ -> Hashtbl.hash x
+  | Con (tx, sx, xi) ->
     let rec inner i =
       if i < sx then (hash @@ xi i)::(inner @@ i + 1)
       else []
     in
 
     Hashtbl.hash (tx, inner 0)
-  end
-  ~fmu:(fun x -> Hashtbl.hash (Var.hash x.Mu.var, hash x.Mu.body))
+  | Mu x -> Hashtbl.hash (Var.hash x.Mu.var, hash x.Mu.body)
 
-let map_head f = unterm ~fvar:repr ~fmu:repr ~fval:(fun _ -> repr)
-  ~fcon:(fun tx sx xi -> make_con tx sx @@ fun i -> f @@ xi i)
+let map_head f x =
+  match shape x with
+  | Con (tx, sx, xi) -> make_con tx sx @@ fun i -> f @@ xi i
+  | _ -> x
 
 let unsafe_map ~fvar ~fval =
   let rec hlp bvs =
-    let rec hlp_bvs x = unterm x ~fval
-      ~fvar:(fun v -> if VarSet.mem v bvs then x else fvar v)
-      ~fcon:(fun tx sx xi -> make_con tx sx (fun i -> hlp_bvs @@ xi i))
-      ~fmu:(fun x -> repr @@ Mu.make x.Mu.var @@ hlp (VarSet.add x.Mu.var bvs) x.Mu.body)
+    let rec hlp_bvs x =
+      match shape x with
+      | Var x' -> if VarSet.mem x' bvs then x else fvar x'
+      | Val _ -> fval x
+      | Con (tx, sx, xi) -> make_con tx sx @@ fun i -> hlp_bvs @@ xi i
+      | Mu x -> repr @@ Mu.make x.Mu.var @@ hlp (VarSet.add x.Mu.var bvs) x.Mu.body
     in
     hlp_bvs
   in
@@ -309,14 +288,15 @@ let unsafe_map ~fvar ~fval =
 
 let iter ~fvar ~fval =
   let rec hlp bvs =
-    let rec hlp_bvs x = unterm x ~fval
-      ~fvar:(fun x -> if not @@ VarSet.mem x bvs then fvar x)
-      ~fcon:begin fun _ sx xi ->
+    let rec hlp_bvs x =
+      match shape x with
+      | Var x -> if not @@ VarSet.mem x bvs then fvar x
+      | Val _ -> fval x
+      | Con (_, sx, xi) ->
         for i = 0 to sx - 1 do
           hlp_bvs @@ xi i
         done
-      end
-      ~fmu:(fun x -> hlp (VarSet.add x.Mu.var bvs) x.Mu.body)
+      | Mu x -> hlp (VarSet.add x.Mu.var bvs) x.Mu.body
     in
     hlp_bvs
   in
@@ -324,16 +304,17 @@ let iter ~fvar ~fval =
 
 let fold ~fvar ~fval ~init =
   let rec hlp bvs =
-    let rec hlp_bvs acc x = unterm x ~fval:(fval acc)
-      ~fvar:(fun x -> if VarSet.mem x bvs then acc else fvar acc x)
-      ~fcon:begin fun _ sx xi ->
+    let rec hlp_bvs acc x =
+      match shape x with
+      | Var x -> if VarSet.mem x bvs then acc else fvar acc x
+      | Val _ -> fval acc x
+      | Con (tx, sx, xi) ->
         let rec inner i acc =
           if i < sx then inner (i + 1) @@ hlp_bvs acc @@ xi i
           else acc
         in
         inner 0 acc
-      end
-      ~fmu:(fun x -> hlp (VarSet.add x.Mu.var bvs) acc x.Mu.body)
+      | Mu x -> hlp (VarSet.add x.Mu.var bvs) acc x.Mu.body
     in
     hlp_bvs
   in
@@ -342,36 +323,47 @@ let fold ~fvar ~fval ~init =
 module Flat =
   struct
 
-    let[@inline] unterm ~fvar ~fval ~fcon x = unterm x ~fvar ~fval ~fcon
-      ~fmu:begin fun x -> invalid_arg
+    let[@inline] shape x =
+      match shape x with
+      | Mu x -> invalid_arg
         @@ Format.asprintf "OCanren fatal: mu-binders aren't allowed here (%a)" pp (repr x)
-      end
+      | x -> x
 
     let map ~fvar ~fval =
-      let rec hlp x = unterm x ~fvar ~fval
-        ~fcon:(fun tx sx xi -> make_con tx sx @@ fun i -> hlp @@ xi i)
+      let rec hlp x =
+        match shape x with
+        | Var x -> fvar x
+        | Val _ -> fval x
+        | Con (tx, sx, xi) -> make_con tx sx @@ fun i -> hlp @@ xi i
+        | Mu _ -> assert false
       in
       hlp
 
     let iter ~fvar ~fval =
-      let rec hlp x = unterm x ~fvar ~fval
-        ~fcon:begin fun _ sx xi ->
+      let rec hlp x =
+        match shape x with
+        | Var x -> fvar x
+        | Val _ -> fval x
+        | Con (_, sx, xi) ->
           for i = 0 to sx - 1 do
             hlp @@ xi i
           done
-        end
+        | Mu _ -> assert false
       in
       hlp
 
     let fold ~fvar ~fval ~init =
-      let rec hlp acc x = unterm x ~fvar:(fvar acc) ~fval:(fval acc)
-        ~fcon:begin fun _ sx xi ->
+      let rec hlp acc x =
+        match shape x with
+        | Var x -> fvar acc x
+        | Val _ -> fval acc x
+        | Con (_, sx, xi) ->
           let rec inner i acc =
             if i < sx then inner (i + 1) @@ hlp acc @@ xi i
             else acc
           in
           inner 0 acc
-        end
+        | Mu _ -> assert false
       in
       hlp init
 
@@ -380,33 +372,24 @@ module Flat =
     type label = L | R
 
     let fold2 ~fvar ~fval ~fk ~init =
-      let rec hlp acc x y = unterm x
-        ~fvar:begin fun x -> unterm y
-          ~fvar:(fun y -> fvar acc x y)
-          ~fval:(fun _ _ -> fk acc L x y)
-          ~fcon:(fun _ _ _ -> fk acc L x y)
-        end
-        ~fval:begin fun tx x -> unterm y
-          ~fvar:(fun y -> fk acc R y x)
-          ~fval:begin fun ty y ->
-            if tx = ty then fval acc tx x y
-            else raise @@ Different_shape (tx, ty)
-          end
-          ~fcon:(fun ty _ _ -> raise @@ Different_shape (tx, ty))
-        end
-        ~fcon:begin fun tx sx xi -> unterm y
-          ~fvar:(fun y -> fk acc R y x)
-          ~fval:(fun ty _ -> raise @@ Different_shape (tx, ty))
-          ~fcon:begin fun ty sy yi ->
-            if tx = ty && sx = sy then
-              let rec inner i acc =
-                if i < sx then inner (i + 1) @@ hlp acc (xi i) (yi i)
-                else acc
-              in
-              inner 0 acc
-            else raise @@ Different_shape (tx, ty)
-          end
-        end
+      let rec hlp acc x y =
+        match shape x, shape y with
+        | Var x, Var y -> fvar acc x y
+        | Var x, _ -> fk acc L x y
+        | _, Var y -> fk acc R y x
+        | Val tx, Val ty ->
+          if tx = ty then fval acc x y
+          else raise @@ Different_shape (tx, ty)
+        | Val tx, Con (ty, _, _) | Con (tx, _, _), Val ty -> raise @@ Different_shape (tx, ty)
+        | Con (tx, sx, xi), Con (ty, sy, yi) ->
+          if tx = ty && sx = sy then
+            let rec inner i acc =
+              if i < sx then inner (i + 1) @@ hlp acc (xi i) (yi i)
+              else acc
+            in
+            inner 0 acc
+          else raise @@ Different_shape (tx, ty)
+        | Mu _, _ | _, Mu _ -> assert false
       in
       hlp init
   end

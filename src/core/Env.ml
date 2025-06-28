@@ -39,17 +39,21 @@ let check env v = (v.Term.Var.env = env.anchor)
 let check_exn env v =
   if check env v then () else failwith "OCanren fatal (Env.check): wrong environment"
 
-let[@inline] unterm env ~fvar ~fval ~fcon ~fmu x = Term.unterm (Term.repr x) ~fval ~fcon
-  ~fvar:(fun x -> check_exn env x ; fvar x)
-  ~fmu:(fun x -> check_exn env x.Term.Mu.var ; fmu x)
+let shape env x =
+  match Term.shape (Term.repr x) with
+  | Var x as res -> check_exn env x ; res
+  | Mu x as res -> check_exn env x.Term.Mu.var ; res
+  | res -> res
 
-let[@inline] unterm_flat env ~fvar ~fval ~fcon x = Term.Flat.unterm (Term.repr x) ~fval ~fcon
-  ~fvar:(fun x -> check_exn env x ; fvar x)
+let shape_flat env x =
+  match Term.Flat.shape (Term.repr x) with
+  | Var x as res -> check_exn env x ; res
+  | res -> res
 
 let freevars env x =
   Term.fold (Term.repr x) ~init:Term.VarSet.empty
     ~fvar:(fun acc v -> Term.VarSet.add v acc)
-    ~fval:(fun acc _ _ -> acc)
+    ~fval:(fun acc _ -> acc)
 
 exception Open_Term
 
@@ -57,7 +61,7 @@ let is_open env x =
   try
     Term.iter (Term.repr x)
       ~fvar:(fun _ -> raise Open_Term)
-      ~fval:(fun _ _ -> ()) ;
+      ~fval:(fun _ -> ()) ;
     false
   with Open_Term -> true
 
