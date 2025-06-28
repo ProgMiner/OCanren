@@ -161,8 +161,7 @@ let inject ~scope env subst =
         Term.repr var
     in
 
-    (* TODO: check is term head already *)
-    let term = Term.map_head hlp term in
+    let term = if is_term_head term then term else Term.map_head hlp term in
     subst := extend !subst var term
   in
 
