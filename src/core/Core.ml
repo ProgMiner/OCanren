@@ -264,7 +264,7 @@ module State =
       ; ctrs  : Disequality.t
       ; prunes: Prunes.t
       ; scope : Term.Var.scope
-      ; next_occurs: int
+      ; next_occurs: int * Term.Var.t list
       }
 
     type reified = Env.t * Term.t
@@ -275,7 +275,7 @@ module State =
       ; ctrs  = Disequality.empty
       ; prunes = Prunes.empty
       ; scope = Term.Var.new_scope ()
-      ; next_occurs = 16
+      ; next_occurs = 16, []
       }
 
     let env   {env} = env
@@ -293,12 +293,18 @@ module State =
       | None -> None
       | Some (prefix, subst) ->
         let occurs_check () =
-          let subst_size = Subst.size subst in
-          if subst_size < next_occurs then st else begin
-            Subst.occurs_check env subst ;
-            let next_occurs = subst_size * 2 in
-            { st with next_occurs }
-          end
+          let next_occurs =
+            let hlp (cnt, lst) Subst.Binding.{ var } = cnt - 1, var::lst in
+            List.fold_left hlp next_occurs prefix
+          in
+          let next_occurs =
+            if fst next_occurs <= 0 then begin
+              Subst.occurs_check env subst @@ snd next_occurs ;
+              let new_cnt = int_of_float @@ ceil @@ sqrt @@ float_of_int @@ Subst.size subst in
+              new_cnt, []
+            end else next_occurs
+          in
+          { st with next_occurs }
         in
         match if Runconf.do_occurs_check () then occurs_check () else st with
         | exception Subst.Occurs_check -> None
@@ -329,7 +335,9 @@ module State =
 
     (* returns empty list on occurs check *)
     let reify x { env ; subst ; ctrs } =
-      match if Runconf.do_occurs_check () then Subst.occurs_check ~with_roots:true env subst with
+      match
+        if Runconf.do_occurs_check () then Subst.full_occurs_check ~with_roots:true env subst
+      with
       | exception Subst.Occurs_check -> []
       | () ->
         (* TODO(ProgMiner): we may lose constraints on some variables that occurs in constraints

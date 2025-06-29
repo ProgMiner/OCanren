@@ -49,7 +49,8 @@ val pp : Format.formatter -> t -> unit
 
 exception Occurs_check
 
-val occurs_check : ?with_roots:bool -> Env.t -> t -> unit
+val occurs_check : Env.t -> t -> Term.Var.t list -> unit
+val full_occurs_check : ?with_roots:bool -> Env.t -> t -> unit
 
 (* [unify ~scope env subst x y] performs unification of two flat terms [x] and [y] in [subst].
  *   Unification is a process of finding substituion [s] s.t. [s(x) = s(y)].

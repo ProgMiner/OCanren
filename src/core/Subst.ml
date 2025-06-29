@@ -201,7 +201,7 @@ let union env subst x y =
 exception Unification_failed
 exception Occurs_check
 
-let occurs_check ?(with_roots=false) env subst =
+let occurs_check_hlp env subst =
   let vis = Term.VarTbl.create 16 in
 
   let rec hlp x =
@@ -223,6 +223,15 @@ let occurs_check ?(with_roots=false) env subst =
         end
       | _ -> assert false
   in
+
+  hlp
+
+let occurs_check env subst roots =
+  let hlp = occurs_check_hlp env subst in
+  List.iter hlp roots
+
+let full_occurs_check ?(with_roots=false) env subst =
+  let hlp = occurs_check_hlp env subst in
 
   Term.VarMap.iter (fun var _ -> hlp var) subst ;
   if with_roots then List.iter hlp @@ Env.roots env

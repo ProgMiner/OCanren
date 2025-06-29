@@ -145,7 +145,7 @@ module Disjunct :
       | None                 -> Fulfiled
       | Some ([], _)         -> Violated
       | Some (prefix, subst) ->
-        match if Runconf.do_occurs_check () then Subst.occurs_check env subst with
+        match if Runconf.do_occurs_check () then Subst.full_occurs_check env subst with
         | exception Subst.Occurs_check -> Fulfiled
         | () -> Refined prefix
 
