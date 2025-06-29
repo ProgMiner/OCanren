@@ -131,7 +131,7 @@ let occurs_check env subst roots =
       end
   in
 
-  List.iter hlp roots
+  List.iter (fun Binding.{ var } -> hlp var) roots
 
 let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   (* The idea is to do the unification and collect the unification prefix during the process *)
@@ -172,14 +172,12 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
     end
   in
 
-  let x, y = Term.(repr x, repr y) in
-  match helper x y [] ([], subst) with
-  | exception Term.Flat.Different_shape _ | exception Unification_failed -> None
-  | prefix, subst ->
-    let roots () = List.map (fun Binding.{ var } -> var) prefix in
-    match if Runconf.do_occurs_check () then occurs_check env subst @@ roots () with
-    | exception Occurs_check -> None
-    | () -> Some (prefix, subst)
+  try
+    let x, y = Term.(repr x, repr y) in
+    let prefix, subst as res = helper x y [] ([], subst) in
+    if Runconf.do_occurs_check () then occurs_check env subst prefix ;
+    Some res
+  with Term.Flat.Different_shape _ | Unification_failed | Occurs_check -> None
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
