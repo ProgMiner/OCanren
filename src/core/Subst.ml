@@ -183,9 +183,10 @@ let union env subst x y =
 
   if Term.Var.equal x y then None, None
   else
-    let x, y = match t2 with
-    | Some _ -> y, x
-    | None -> x, y
+    let x, y = match t1, t2 with
+    | None, None -> if Term.Var.compare x y < 0 then x, y else y, x
+    | _, Some _ -> y, x
+    | _ -> x, y
     in
 
     let ext, ts = match t1, t2 with
