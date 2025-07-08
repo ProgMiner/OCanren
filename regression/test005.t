@@ -20,10 +20,10 @@
   q=Arr (_.17, _.17);
   }
   fun q -> infero (abs varF (abs varX (app (v varF) (v varX)))) q, 1 answer {
-  q=Arr (Arr (_.31, _.32), Arr (_.31, _.32));
+  q=Arr (Arr (_.25, _.26), Arr (_.25, _.26));
   }
   fun q -> infero (abs varX (abs varF (app (v varF) (v varX)))) q, 1 answer {
-  q=Arr (_.17, Arr (Arr (_.17, _.32), _.32));
+  q=Arr (_.17, Arr (Arr (_.17, _.26), _.26));
   }
   fun q -> infero (abs varX (app (v varX) (v varX))) q, 1 answer {
   q=Arr (mu 17 <Arr (_.17, _.18)>, _.18);

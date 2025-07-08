@@ -24,7 +24,7 @@
   q=V ("x");
   }
   fun q -> evalo (app q (v varX)) (v varX), 1 answer {
-  q=Abs (_.60, V (_.60));
+  q=Abs (_.59, V (_.59));
   }
   fun q r -> evalo (app r q) (v varX), 1 answer {
   q=V ("x"); r=Abs (_.68, V (_.68));

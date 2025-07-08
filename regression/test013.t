@@ -144,5 +144,5 @@
   q=S (S (O)); r=S (O);
   }
   fun q -> List.lengtho q ?$3, all answers {
-  q=[_.11; _.16; _.19];
+  q=[_.11; _.14; _.17];
   }
