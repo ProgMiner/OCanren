@@ -29,18 +29,11 @@ module Var =
 
     type term   = t
     type env    = int
-    type scope  = int
     type anchor = int ref
 
     let tabling_env = -1
 
     let unused_index = -1
-
-    let non_local_scope = -6
-
-    let new_scope =
-      let scope = ref 0 in
-      fun () -> (incr scope; !scope)
 
     let global_anchor = ref (-8)
 
@@ -48,24 +41,19 @@ module Var =
       { anchor        : anchor;
         env           : env;
         index         : int;
-        mutable subst : term option;
-        scope         : scope;
         constraints   : term list
       }
 
-    let make ~env ~scope index = {
+    let make ~env index = {
       env         = env;
       anchor      = global_anchor;
-      subst       = None;
       constraints = [];
       index;
-      scope;
     }
 
     let dummy =
       let env   = 0 in
-      let scope = 0 in
-      make ~env ~scope 0
+      make ~env 0
 
     let var_tag, var_size =
       let dummy = Obj.repr dummy in

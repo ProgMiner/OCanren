@@ -30,13 +30,7 @@ val empty : unit -> t
 
 val create : anchor:Term.Var.env -> t
 
-(** Creating a fresh variable takes an extra argument [scope] to decide if
-    storing a substituted value inside a variable is OKay.
-
-    The idea was recommended by
-    {{: https://github.com/michaelballantyne/faster-minikanren#set-var-val }faster-miniKanren}
-    implementation. *)
-val fresh : scope:Term.Var.scope -> t -> 'a
+val fresh : t -> 'a
 
 val check : t -> Term.Var.t -> bool
 

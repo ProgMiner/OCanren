@@ -28,24 +28,18 @@ module Var :
 
     type term = t
     type env = int
-    type scope
     type anchor
 
     type t =
       { anchor        : anchor;
         env           : env;
         index         : int;
-        mutable subst : term option;
-        scope         : scope;
         constraints   : term list
       }
 
     val tabling_env : env
 
-    val non_local_scope : scope
-    val new_scope : unit -> scope
-
-    val make : env:env -> scope:scope -> int -> t
+    val make : env:env -> int -> t
 
     val reify : (term -> 'b) -> t -> int * 'b list
 
