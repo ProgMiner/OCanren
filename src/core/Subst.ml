@@ -134,7 +134,7 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
       let x, t1 = walk env subst x in
       let y, t2 = walk env subst y in
 
-      if Term.Var.equal x y then acc
+      if Term.Var.equal x y || Term.Var.is_wildcard x || Term.Var.is_wildcard y then acc
       else match t1, t2 with
       | Some x, Some y ->
         if x == y || check_vis x y vis then acc
@@ -148,7 +148,9 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
     end
     ~fk:begin fun ((_, subst) as acc) _ x y ->
       match walk env subst x with
-      | x, None -> extend x y acc
+      | x, None ->
+        if Term.Var.is_wildcard x then acc
+        else extend x y acc
       | _, Some x ->
         if x == y || check_vis x y vis then acc
         else helper x y ((x, y)::vis) acc
