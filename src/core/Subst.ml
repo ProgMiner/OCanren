@@ -62,6 +62,11 @@ let is_var t =
   | Var _ -> true
   | _ -> false
 
+let[@inline] unvar env x =
+  match Env.shape_flat env x with
+  | Var x -> x
+  | _ -> invalid_arg "OCanren fatal: not a term head"
+
 (* term head is a constructor with variables as arguments *)
 let is_term_head t =
   match Term.shape t with
@@ -125,10 +130,28 @@ let walk env subst =
 
   walkv
 
+exception Occurs_check
+
+let occurs env subst var =
+  let rec hlp term =
+    match Env.shape_flat env term with
+    | Var x ->
+      let x, term = walk env subst x in
+      (* we must check bound variables too because of "prefire" binging that rewrites existing bindings *)
+      if Term.Var.equal x var then raise Occurs_check ;
+      begin match term with Some term -> hlp term | None -> () end
+    | Val _ -> ()
+    | Con (_, sx, xi) ->
+      for i = 0 to sx - 1 do
+        hlp @@ xi i
+      done
+    | _ -> assert false
+  in
+  hlp
+
 (* [var] must be free in [subst], [term] must be either a different variable or a term head *)
 let extend ~scope env subst var term =
-  (* TODO(ProgMiner): implement occurs check in other place *)
-  (* if Runconf.do_occurs_check () then occurs env subst var term; *)
+  if Runconf.do_occurs_check () then occurs env subst var term ;
 
   (* It is safe to modify variables destructively if the case of scopes match.
    * There are two cases:
@@ -230,7 +253,7 @@ let unify ?(scope=Term.Var.non_local_scope) env subst x y =
   try
     let x, y = Term.(repr x, repr y) in
     Some (helper x y ([], subst))
-  with Term.Flat.Different_shape _ | Unification_failed -> None
+  with Term.Flat.Different_shape _ | Unification_failed | Occurs_check -> None
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
@@ -245,14 +268,6 @@ let subsumed env subst = Term.VarMap.for_all @@ fun var term ->
   | _            -> false
 
 let image env subst =
-  let unvar x =
-    match Env.shape_flat env x with
-    | Var x -> x
-    | _ -> invalid_arg
-      @@ Format.asprintf "OCanren fatal: not a term head in substitution right hand side %a"
-        pp subst
-  in
-
   let vis = Term.VarTbl.create 16 in
   let rec hlp x = match walk env subst x with
   | x, None -> Term.repr x
@@ -262,7 +277,7 @@ let image env subst =
       Term.repr x
     end else begin
       Term.VarTbl.add vis x false ;
-      let t = Term.map_head (fun x -> hlp @@ unvar x) t in
+      let t = Term.map_head (fun x -> hlp @@ unvar env x) t in
       let t = if Term.VarTbl.find vis x then Term.repr @@ Term.Mu.make x t else t in
       Term.VarTbl.remove vis x ;
       t
