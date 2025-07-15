@@ -62,6 +62,11 @@ let is_var t =
   | Var _ -> true
   | _ -> false
 
+let[@inline] unvar env x =
+  match Env.shape_flat env x with
+  | Var x -> x
+  | _ -> invalid_arg "OCanren fatal: not a term head"
+
 (* term head is a constructor with variables as arguments *)
 let is_term_head t =
   match Term.shape t with
@@ -163,10 +168,28 @@ let bind env subst var term =
 
   ref @@ Term.VarMap.add var (RootNode { root with term }) !subst
 
+exception Occurs_check
+
+let occurs env subst var =
+  let rec hlp term =
+    match Env.shape_flat env term with
+    | Var x ->
+      let x, r = find env subst x in
+      (* we must check bound variables too because of "prefire" binging that rewrites existing bindings *)
+      if Term.Var.equal x var then raise Occurs_check ;
+      begin match r.term with Some term -> hlp term | None -> () end
+    | Val _ -> ()
+    | Con (_, sx, xi) ->
+      for i = 0 to sx - 1 do
+        hlp @@ xi i
+      done
+    | _ -> assert false
+  in
+  hlp
+
 (* [var] must be free in [subst], [term] must be either a different variable or a term head *)
 let extend env subst var term =
-  (* TODO(ProgMiner): implement occurs check in other place *)
-  (* if Runconf.do_occurs_check () then occurs env subst var term; *)
+  if Runconf.do_occurs_check () then occurs env subst var term ;
   match Env.shape_flat env term with
   | Var var' -> union env subst var var'
   | _ -> bind env subst var term
@@ -202,7 +225,7 @@ let inject env subst =
     in
 
     let term = if is_term_head term then term else Term.map_head hlp term in
-    subst := bind env !subst var term
+    subst := extend env !subst var term
   in
 
   fun var term ->
@@ -233,7 +256,7 @@ let union' env subst x y =
     | _ -> Extend, None
     in
 
-    Some (ext, y, x), ts
+    Some (ext, y, Term.repr x), ts
 
 exception Unification_failed
 
@@ -247,8 +270,8 @@ let unify env subst x y =
 
       let acc = match ext with
       | None -> acc
-      | Some (Extend, x, y) -> extend_prefix prefix x (Term.repr y), union env subst x y
-      | Some (Prefire, x, y) -> prefix, union env subst x y
+      | Some (Extend, x, y) -> extend_prefix prefix x y, extend env subst x y
+      | Some (Prefire, x, y) -> prefix, extend env subst x y
       in
 
       match ts with
@@ -270,7 +293,7 @@ let unify env subst x y =
   try
     let x, y = Term.(repr x, repr y) in
     Some (helper x y ([], subst))
-  with Term.Flat.Different_shape _ | Unification_failed -> None
+  with Term.Flat.Different_shape _ | Unification_failed | Occurs_check -> None
 
 let unify_map env subst map =
   let vars, terms = Term.VarMap.fold (fun v t (vs, ts) -> Term.repr v :: vs, t::ts) map ([], []) in
@@ -288,14 +311,6 @@ let subsumed env s1 s2 =
   Term.VarMap.for_all hlp !s2
 
 let image env subst =
-  let unvar x =
-    match Env.shape_flat env x with
-    | Var x -> x
-    | _ -> invalid_arg
-      @@ Format.asprintf "OCanren fatal: not a term head in substitution right hand side %a"
-        pp subst
-  in
-
   let vis = Term.VarTbl.create 16 in
   let rec hlp x =
     let x, r = find env subst x in
@@ -307,7 +322,7 @@ let image env subst =
         Term.repr x
       end else begin
         Term.VarTbl.add vis x false ;
-        let t = Term.map_head (fun x -> hlp @@ unvar x) t in
+        let t = Term.map_head (fun x -> hlp @@ unvar env x) t in
         let t = if Term.VarTbl.find vis x then Term.repr @@ Term.Mu.make x t else t in
         Term.VarTbl.remove vis x ;
         t
