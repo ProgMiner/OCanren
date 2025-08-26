@@ -217,7 +217,7 @@ module Disjunct :
       ) t Term.VarSet.empty
 
     let subsumed env subst t t' =
-      Subst.(subsumed env (of_map t') (of_map t))
+      Subst.(subsumed env (of_map env t') (of_map env t))
 
     let simplify env subst ds =
       try
