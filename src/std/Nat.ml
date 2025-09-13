@@ -60,17 +60,17 @@ let rec inj n = to_logic (GT.(gmap t) inj n)
 
 let reify =
   let open Env.Monad.Syntax in
-  Reifier.fix (fun self ->
-  Reifier.compose Reifier.reify
-      (
-        let* fr = self in
-        let rec foo = function
-          | Var (v, xs) ->
-            Var (v, Stdlib.List.map foo xs)
-          | Value x -> Value (GT.gmap t fr x)
-        in
-        Env.Monad.return foo
-    ))
+  Reifier.fix begin fun self ->
+    Reifier.compose Reifier.reify begin
+      let* fr = self in
+      let rec foo = function
+      | Var (v, xs) -> Var (v, Stdlib.List.map foo xs)
+      | Value x -> Value (GT.gmap t fr x)
+      | Mu (v, x) -> Mu (v, foo x)
+      in
+      Env.Monad.return foo
+    end
+  end
 
 let prj_exn : (groundi, ground) Reifier.t =
   let ( >>= ) = Env.Monad.bind in

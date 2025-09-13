@@ -39,10 +39,16 @@ let check env v = (v.Term.Var.env = env.anchor)
 let check_exn env v =
   if check env v then () else failwith "OCanren fatal (Env.check): wrong environment"
 
-let var env x =
-  match Term.var x with
-  | (Some v) as res -> check_exn env v ; res
-  | None            -> None
+let shape env x =
+  match Term.shape (Term.repr x) with
+  | Var x as res -> check_exn env x ; res
+  | Mu x as res -> check_exn env x.Term.Mu.var ; res
+  | res -> res
+
+let shape_flat env x =
+  match Term.Flat.shape (Term.repr x) with
+  | Var x as res -> check_exn env x ; res
+  | res -> res
 
 let freevars env x =
   Term.fold (Term.repr x) ~init:Term.VarSet.empty

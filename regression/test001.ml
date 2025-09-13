@@ -53,13 +53,12 @@ let rec reverso a b =
 
 let run_exn eta = run_r (Std.List.prj_exn OCanren.prj_exn) eta
 let _ =
-  run_exn show_int_list  1  q qh (REPR (fun q   -> q === !!1 % q));
   run_exn show_int_list  1  q qh (REPR (fun q   -> appendo q (ilist [3; 4]) (ilist [1; 2; 3; 4])   ));
   run_exn show_int_list  1  q qh (REPR (fun q   -> reverso q (ilist [1; 2; 3; 4])                  ));
   run_exn show_int_list  1  q qh (REPR (fun q   -> reverso (ilist [1; 2; 3; 4]) q                  ));
   run_exn show_int_list  2  q qh (REPR (fun q   -> reverso q (ilist [1])                           ));
   run_exn show_int_list  1  q qh (REPR (fun q   -> reverso (ilist [1]) q                           ));
-  run_exn show_int_list  1  q qh (REPR (fun q   -> occurs q                                        ))
+  ()
 
 let run_exn eta = run_r OCanren.prj_exn  eta
 let _ =
@@ -82,4 +81,5 @@ let _withFree =
   runL          3  q  qh (REPR (fun q   -> reverso q q                                  ));
   runL         10  q  qh (REPR (fun q   -> reverso q q                                  ));
   runL          1 qr qrh (REPR (fun q r -> two_vars q r                                 ));
+  runL       (-1)  q  qh (REPR (fun q   -> occurs q                                     ));
   ()

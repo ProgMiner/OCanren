@@ -23,6 +23,7 @@
 @type 'a logic =
 | Var   of GT.int * 'a logic GT.list
 | Value of 'a
+| Mu    of GT.int * 'a logic
 with show, gmap, html, eq, compare, foldl, foldr, fmt
 
 (** [to_logic x] makes a logic value from a regular one *)
@@ -63,10 +64,10 @@ module Reifier : sig
   *)
   val prj_exn : ('a ilogic, 'a) t
 
-  (** [prj onvar] Projects implicit logic into the underlying type,
-   *  handling logic variables with [onvar]
+  (** [prj onvar onmu] Projects implicit logic into the underlying type,
+   *  handling logic variables with [onvar] and mu-binders with [onmu]
    *)
-  val prj : (int -> 'a) -> ('a ilogic, 'a) t
+  val prj : (int -> 'a) -> (int -> 'a -> 'a) -> ('a ilogic, 'a) t
 
   (* Interesting part --- we can apply a reifier to a value dipped into `State.t` comonad *)
   (* val apply : ('a, 'b) t -> 'a State.t -> 'b *)

@@ -47,10 +47,10 @@ module Answer :
 
     (* [extract a v] returns list of `forbidden` terms for variable [v] *)
     val extract : t -> Term.Var.t -> Term.t list
-
-    val subsumed : Env.t -> t -> t -> bool
   end
 
 val reify : Env.t -> Subst.t -> t -> 'a -> Answer.t list
+
+val reify_t : Env.t -> Subst.t -> t -> t
 
 val pp : Format.formatter -> t -> unit

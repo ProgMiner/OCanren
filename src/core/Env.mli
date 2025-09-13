@@ -42,8 +42,11 @@ val check : t -> Term.Var.t -> bool
 
 val check_exn : t -> Term.Var.t -> unit
 
-(* See [Term.var] *)
-val var : t -> 'a -> Term.Var.t option
+(* See [Term.shape] *)
+val shape : t -> 'a -> Term.shape
+
+(* See [Term.Flat.shape] *)
+val shape_flat : t -> 'a -> Term.shape
 
 val freevars : t -> 'a -> Term.VarSet.t
 

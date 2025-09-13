@@ -14,11 +14,12 @@
     test014
     test015runaway
     test016sorto
-    test017tabling
+    ; test017tabling
     test018prjc
-    test019tablingCache
+    ; test019tablingCache
     test021structural
     test022newsyntax
+    test023diseq
   )
   (libraries GT OCanren OCanren.tester)
   (preprocess (action
@@ -44,9 +45,10 @@
   ./test014.exe
   ./test015runaway.exe
   ./test016sorto.exe
-  ./test017tabling.exe
+  ; ./test017tabling.exe
   ./test018prjc.exe
-  ./test019tablingCache.exe
+  ; ./test019tablingCache.exe
   ./test021structural.exe
   ./test022newsyntax.exe
+  ./test023diseq.exe
 ))

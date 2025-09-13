@@ -29,7 +29,7 @@ module Binding :
     val compare : t -> t -> int
     val hash : t -> int
 
-    val pp: Format.formatter -> t -> unit
+    val pp : Format.formatter -> t -> unit
   end
 
 val varmap_of_bindings : Binding.t list -> Term.t Term.VarMap.t
@@ -38,24 +38,21 @@ type t
 
 val empty : t
 
+(* right hand sides must be term heads *)
 val of_map : Term.t Term.VarMap.t -> t
 
 val split : t -> Binding.t list
 
 val pp : Format.formatter -> t -> unit
 
-(* [unify ~subsume ~scope env subst x y] performs unification of two terms [x] and [y] in [subst].
+(* [unify ~scope env subst x y] performs unification of two flat terms [x] and [y] in [subst].
  *   Unification is a process of finding substituion [s] s.t. [s(x) = s(y)].
  *   Returns [None] if two terms are not unifiable.
  *   Otherwise it returns a pair of diff and new substituion.
  *   Diff is a list of pairs (var, term) that were added to the original substituion.
- *
- *   If [subsume] argument is passed and [true] then substituion binds variables only from left term,
- *   (i.e. it returns [s] s.t. [s(x) = y]).
- *   This can be used to perform subsumption check:
- *   [y] is subsumed by [x] (i.e. [x] is more general than [x]) if such a unification succeeds.
+ *   Current algorithm doesn't forbid recursive terms.
  *)
-val unify : ?subsume:bool -> ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
+val unify : ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> (Binding.t list * t) option
 
 val unify_map : Env.t -> t -> Term.t Term.VarMap.t -> (Binding.t list * t) option
 
@@ -66,21 +63,19 @@ val merge_disjoint : Env.t -> t -> t -> t
  *)
 val subsumed : Env.t -> t -> t -> bool
 
-(* [apply env subst x] - applies [subst] to term [x],
- *   i.e. replaces every variable to relevant binding in [subst];
+(* [apply env subst x] applies [subst] to flat term [x] (without mu-binders),
+ *   i.e. replaces every variable to image in [subst];
+ *   resulting in term with possible mu-binders inside
  *)
-val apply : Env.t -> t -> 'a -> 'a
+val apply : Env.t -> t -> Term.t -> Term.t
 
 (* [freevars env subst x] - returns all free-variables of term [x] *)
-val freevars : Env.t -> t -> 'a -> Term.VarSet.t
+val freevars : Env.t -> t -> Term.t -> Term.VarSet.t
 
 module Answer :
   sig
 
     type t = Term.t
-
-    (* [subsumed env x y] checks that [x] is subsumed by [y] (i.e. [y] is more general than [x]) *)
-    val subsumed : Env.t -> t -> t -> bool
   end
 
 (* see [apply] *)
