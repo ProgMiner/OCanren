@@ -59,7 +59,7 @@ val unify : ?subsume:bool -> ?scope:Term.Var.scope -> Env.t -> t -> 'a -> 'a -> 
 
 val unify_map : Env.t -> t -> Term.t Term.VarMap.t -> (Binding.t list * t) option
 
-val merge_disjoint : Env.t -> t -> t -> t
+val merge_disjoint : t -> t -> t
 
 (* [subsumed env s1 s2] checks that [s1] is subsumed by [s2] (i.e. [s2] is more general than [s1]).
  *   Subsumption relation forms a partial order on the set of substitutions.
