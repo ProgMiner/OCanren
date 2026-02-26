@@ -264,6 +264,7 @@ module State =
       ; ctrs  : Disequality.t
       ; prunes: Prunes.t
       ; scope : Term.Var.scope
+      ; trace : (Term.t * Term.t * t) option
       }
 
     type reified = Env.t * Term.t
@@ -274,6 +275,7 @@ module State =
       ; ctrs  = Disequality.empty
       ; prunes = Prunes.empty
       ; scope = Term.Var.new_scope ()
+      ; trace = None
       }
 
     let env   {env} = env
@@ -294,7 +296,8 @@ module State =
         match Disequality.recheck env subst ctrs prefix with
         | None      -> None
         | Some ctrs ->
-          let next_state = { st with subst ; ctrs } in
+          let trace = IFDEF TRACE THEN Some (Term.repr x, Term.repr y, st) ELSE st.trace END in
+          let next_state = { st with subst ; ctrs ; trace } in
           if PrunesControl.is_exceeded ()
           then begin
             let () = PrunesControl.reset_cur_counter () in
@@ -315,37 +318,84 @@ module State =
         | Prunes.Violated -> None
         | NonViolated -> Some { st with ctrs }
 
+    IFDEF TRACE THEN
+
+    (* assigned in Trace module *)
+    let save_trace = ref @@ Obj.magic 0
+
+    END
+
     (* always returns non-empty list *)
-    let reify x { env ; subst ; ctrs } =
+    let reify x ({ env ; subst ; ctrs } as st) =
       (* TODO(ProgMiner): we may lose constraints on some variables that occurs in constraints
         but not in original answer *)
       match Disequality.reify env subst ctrs x with
       | [] -> (* [Answer.make env answ] *) assert false
-      | diseqs -> ListLabels.map diseqs ~f:begin fun diseq ->
-        let rec helper : 'a . _ -> 'a -> _ = fun forbidden t ->
-          (* we must apply substitution here to reify constraint *)
-          let t = Subst.reify env subst t in
-          Term.unsafe_map t ~fval:Term.repr ~fvar:begin fun v -> Term.repr @@
-            if Term.VarSet.mem v forbidden then v
-            else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
-                |> List.filter begin fun t ->
-                  match Env.shape env t with
-                  | Var u -> not @@ Term.VarSet.mem u forbidden
-                  | _ -> true
-                end
-                |> List.map (helper @@ Term.VarSet.add v forbidden)
-                (* TODO: represent [Var.constraints] as [Set];
-                 * TODO: hide all manipulations on [Var.t] inside [Var] module;
-                 *)
-                |> List.sort Term.compare
-              }
-          end
-        in
-        Answer.make env @@ helper Term.VarSet.empty x
-      end
+      | diseqs ->
+        IFDEF TRACE THEN !save_trace st ELSE let _ = st in () END ;
+        ListLabels.map diseqs ~f:begin fun diseq ->
+          let rec helper : 'a . _ -> 'a -> _ = fun forbidden t ->
+            (* we must apply substitution here to reify constraint *)
+            let t = Subst.reify env subst t in
+            Term.unsafe_map t ~fval:Term.repr ~fvar:begin fun v -> Term.repr @@
+              if Term.VarSet.mem v forbidden then v
+              else { v with Term.Var.constraints = Disequality.Answer.extract diseq v
+                  |> List.filter begin fun t ->
+                    match Env.shape env t with
+                    | Var u -> not @@ Term.VarSet.mem u forbidden
+                    | _ -> true
+                  end
+                  |> List.map (helper @@ Term.VarSet.add v forbidden)
+                  (* TODO: represent [Var.constraints] as [Set];
+                   * TODO: hide all manipulations on [Var.t] inside [Var] module;
+                   *)
+                  |> List.sort Term.compare
+                }
+            end
+          in
+          Answer.make env @@ helper Term.VarSet.empty x
+        end
 
     let reify_constraints { env ; subst ; ctrs } = Disequality.reify_t env subst ctrs
   end
+
+IFDEF TRACE THEN
+
+module Trace :
+  sig
+
+    type t
+
+    val pp : Format.formatter -> t -> unit
+
+    val extract_last : unit -> t
+  end = struct
+
+    type t = (Term.t * Term.t) list
+
+    let saved_state = ref None
+
+    let () = State.save_trace := fun st -> saved_state := Some st
+
+    let pp =
+        let hlp ppf (l, r) = Format.fprintf ppf "%a = %a" Term.pp l Term.pp r in
+        let pp_sep ppf () = Format.fprintf ppf "; " in
+        Format.pp_print_list ~pp_sep hlp
+
+    let extract =
+      let rec extract acc = function
+      | Some (l, r, st) -> extract ((l, r)::acc) st.State.trace
+      | None -> acc
+      in
+
+      extract []
+
+    let extract_last () = match !saved_state with
+    | Some st -> extract st.State.trace
+    | None -> raise Not_found
+  end
+
+END
 
 let (!!!) = Obj.magic
 
