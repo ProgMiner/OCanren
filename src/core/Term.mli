@@ -158,4 +158,7 @@ module Flat :
      -> fval:('a -> value -> value -> 'a)
      -> fk:('a -> label -> Var.t -> t -> 'a)
      -> init:'a -> t -> t -> 'a
+
+    val marshal : out_channel -> t -> unit
+    val unmarshal : env:Var.env -> scope:Var.scope -> in_channel -> t
   end

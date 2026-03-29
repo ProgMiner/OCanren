@@ -396,4 +396,76 @@ module Flat =
         | Mu _, _ | _, Mu _ -> assert false
       in
       hlp init
+
+  module Int64_IO : sig
+
+      val input : in_channel -> int64
+      val output : out_channel -> int64 -> unit
+  end = struct
+
+      let buf = Bytes.create 8
+
+      let output chan x =
+        Bytes.set_int64_le buf 0 x ;
+        output_bytes chan buf
+
+      let input chan =
+        really_input chan buf 0 8 ;
+        Bytes.get_int64_le buf 0
+  end
+
+  let output_int64 = Int64_IO.output
+  let input_int64 = Int64_IO.input
+
+  (*
+   * Variable:     [0 : byte] [index  : int64  ]
+   * Int value:    [1 : byte] [value  : int64  ]
+   * Float value:  [2 : byte] [value  : float64]
+   * String value: [3 : byte] [length : int64  ] [bytes...]
+   * Functor:      [4 : byte] [tag    : int64  ] [arity : int64] [subterms...]
+   *)
+  let rec marshal chan x =
+    match shape x with
+    | Var x ->
+      output_byte chan 0 ;
+      output_int64 chan @@ Int64.of_int x.Var.index
+    | Val tx ->
+      if is_int tx then begin
+        output_byte chan 1 ;
+        output_int64 chan @@ Int64.of_int @@ obj x
+      end else if is_dbl tx then begin
+        output_byte chan 2 ;
+        output_int64 chan @@ Int64.bits_of_float @@ obj x
+      end else if is_str tx then begin
+        output_byte chan 3 ;
+        let value : string = obj x in
+        output_int64 chan @@ Int64.of_int @@ String.length value ;
+        output_string chan value
+      end else
+        assert false
+    | Con (tx, sx, xi) ->
+        output_byte chan 4 ;
+        output_int64 chan @@ Int64.of_int tx ;
+        output_int64 chan @@ Int64.of_int sx ;
+        for i = 0 to sx - 1 do
+          marshal chan @@ xi i
+        done
+
+  let rec unmarshal ~env ~scope chan =
+    match input_byte chan with
+    | 0 -> repr @@ Var.make ~env ~scope @@ Int64.to_int @@ input_int64 chan
+    | 1 -> repr (Int64.to_int @@ input_int64 chan : int)
+    | 2 -> repr (Int64.float_of_bits @@ input_int64 chan : float)
+    | 3 ->
+        let length = Int64.to_int @@ input_int64 chan in
+        Obj.repr (Stdlib.Option.get @@ In_channel.really_input_string chan length : string)
+    | 4 ->
+        let tx = Int64.to_int @@ input_int64 chan in
+        let sx = Int64.to_int @@ input_int64 chan in
+        let res = Obj.new_block tx sx in
+        for i = 0 to sx - 1 do
+          Obj.set_field res i @@ unmarshal ~env ~scope chan
+        done ;
+        res
+    | x -> invalid_arg @@ Printf.sprintf "Term.unmarshal: incorrect data (%d)" x
   end
